@@ -118,9 +118,12 @@ packages.hello-wasm = pkgs.stdenv.mkDerivation {
 1. **`-backend wasm`**, not `-wasm` (deprecated alias) and not the
    `clang --target=wasm32` path.
 2. **`-no-prefix <Module>` is REQUIRED** — it strips the `<Module>_` prefix so
-   the entry point exports as `main` (what `main.js` searches for). Without it
-the export is `<Module>_main` and the loader says "no main in current scope".
-   Thread the prefix per-module, not a hardcoded string.
+   the entry point exports as `main` (what `main.js` searches for).  Without
+   it the export is `<Module>_main` and the loader says "no main in current
+   scope".  Thread the prefix per-module, not a hardcoded string.
+   **Applies only to runnable-entry targets.** For a library (no `main`) this
+   flag is not needed and the JS-loader `main`-hunting path is irrelevant —
+   see the "library vs runnable" note below.
 3. **Case-exact `.wasm` guard** — always compare the emitted basename against
    the expected `<Module>.wasm` (case-sensitive) and `exit 1` with the on-disk
    list on mismatch. The JS loader (`shell.js` `my_modules` + `main.js`'s
@@ -130,45 +133,54 @@ the export is `<Module>_main` and the loader says "no main in current scope".
    derivations). The wasm target must consume those same `.krml` outputs, never
    re-extract from source.
 
+> **Library vs runnable (critical):** Xeno's `*-krml` packages are **libraries**
+> (verified codecs/serializers — no `main`).  The template's `hello-wasm` is a
+> *runnable-entry* target built around `Hello.main`.  These are two different
+> wasm shapes:
+> - **Library wasm** (what Xeno needs): emit the module's exported
+>   functions/types; there is no `main`, so `-no-prefix` is unnecessary and
+>   the `node main.js` loader is the wrong runner — instead validate/inspect
+>   the `.wasm` (magic bytes, `wasm-objdump -x`, `WebAssembly.validate`) and
+>   call the exported functions directly from a custom JS shim.
+> - **Runnable wasm** (the template's shape): a `main : St Int32.t` entry is
+>   extracted, `-no-prefix` makes it export as `main`, and `node main.js` runs
+>   it.
+> The port must produce **library wasm** unless a package happens to have a
+> demo/entry module with a `main`.
+
 ### Task list (in dependency order)
 
-- [ ] **T1 — Pick the pilot package.** Use `codec` (smallest: `Data.Codec`,
-      `Data.Codec.Types`, `Data.Codec.Low`) — its `codec-krml` output has one
-      extractable `Data.Codec.Low.krml`. Confirm `krml -backend wasm -no-prefix
-      Data.Codec.Low codec-krml/Data.Codec.Low.krml` emits
-      `Data.Codec.Low.wasm` + loader under a scratch dir.
-- [ ] **T2 — Add a `codec-wasm` derivation** to `codec/default.nix` (or the
-      top flake) mirroring `hello-wasm`: `buildInputs = [ fstar karamel
-      codec-krml ]`, `-tmpdir wasm-out -backend wasm -no-prefix Data.Codec.Low
-      ${codec-krml}/Data.Codec.Low.krml`, case-exact guard, `installPhase` ships
-      the full loader bundle (`.wasm`, `.wast`, `main.js`, `loader.js`,
-      `shell.js`, `browser.js`, `main.html`, `layouts.json`, no-ext `README`).
-- [ ] **T3 — Wire it into the flake `packages`** (and `legacyPackages`) as
-      `codec-wasm`, retaining the existing `codec-checked`/`codec-krml` targets
-      untouched. Do NOT make it `default` yet.
-- [ ] **T4 — Verify end to end**: `nix build .#codec-wasm`, confirm
-      `result/*.wasm` magic `\0asm`, then `cd result && node main.js` exits 0
-      (or run `WebAssembly.validate` via `nix shell nixpkgs#nodejs_22`).
-- [ ] **T5 — Generalize the recipe** once T4 is green: factor the wasm
-      derivation into a small helper (e.g. a `mk-krml-wasm` function taking
-      `{ src; krml-drv; module; }`) so the remaining packages (`tls`,
-      `xeno-pg`, …) can reuse it instead of copy-pasting the `hello-wasm`
-      body N times.
-- [ ] **T6 — Roll out to the packages that actually need a `main` export.**
-      Not every `-krml` package has a runnable `main` (many are libraries);
-      only emit `-wasm` for packages with a `*.Low.main` (or a demo driver).
-      List them first; do not blindly add wasm to all ~20 packages.
-- [ ] **T7 — Update Xeno's README/AGENTS** to document the wasm targets, the
-      `-no-prefix` requirement, the case-sensitivity trap, and the
-      `cd result && node main.js` invocation.
+- [ ] **T1 — Pilot on `codec` as a LIBRARY (no `main`).**  Confirm
+      `krml -backend wasm codec-krml/Data.Codec.Low.krml` (NO `-no-prefix`)
+      emits `Data.Codec.Low.wasm` with the `Data.Codec.Low.*` exports (decode/
+      encode), and validate via `wasm-objdump -x` / `WebAssembly.validate` —
+      NOT via `node main.js` (there is nothing to run).
+- [ ] **T2 — Add a `codec-wasm` derivation** mirroring `hello-wasm` minus
+      `-no-prefix` and the `main`-loader assumption: `-tmpdir wasm-out
+      -backend wasm ${codec-krml}/Data.Codec.Low.krml`, case-exact guard,
+      `installPhase` ships `.wasm`/`.wast` (and the JS bundle only if a runner
+      is wanted; for a library, `.wasm`/`.wast` + headers suffice).
+- [ ] **T3 — Wire it in** as `codec-wasm` in `packages`/`legacyPackages`,
+      leaving `codec-checked`/`codec-krml` untouched. Not `default`.
+- [ ] **T4 — Verify**: `.wasm` magic `\0asm`, `wasm-objdump -x` shows the
+      expected `Data.Codec.Low.*` exports (no `main`), and optionally
+      `WebAssembly.validate`.
+- [ ] **T5 — Generalize**: factor `mk-krml-wasm { src; krml-drv; module; }`
+      (no `-no-prefix`) for reuse across library packages.
+- [ ] **T6 — Roll out to library packages** that have a `*.Low` extractable
+      surface; skip any package with zero extractable modules.  (Optional,
+      separate: a single demo package that bundles a `main` wrapper if a
+      runnable wasm is ever wanted — that is the `hello-wasm` shape, not the
+      library shape.)
+- [ ] **T7 — Document** the library-wasm targets (`wasm-objdump -x` to inspect
+      exports, `WebAssembly.validate` to check well-formedness) — do not tell
+      users to `node main.js` on a library.
 
 ### Open questions to resolve during T1 (do not guess)
 
-- Does `Data.Codec.Low` have a `main` (or only pure codecs)? If no `main`, wasm
-  still emits the library exports (add/etc.) but `node main.js` will report
-  "no main in current scope" — decide whether Xeno's wasm target is
-  library-export or runnable-entry. The template is runnable-entry (`Hello.main`).
-- For multi-module packages, does a *single* `krml -backend wasm` call accept
-  the concatenated `.krml` set (like the native link's krmllib glob), or must
-  each module be compiled separately and bundled? (Template does one module;
-  Xeno's codec-krml has one `.Low`, but tls has many.)
+- Multi-`.krml` packages (e.g. `tls` has many `.Low` modules): does a single
+  `krml -backend wasm` call accept the concatenated `.krml` set, or must each
+  module be emitted separately?  (Template is single-module; library-wise the
+  `.Low` count is what matters.)
+- Whether to also ship the JS loader bundle for library targets, or only
+  `.wasm`/`.wast` + a note that consumers instantiate it directly (no `main`).

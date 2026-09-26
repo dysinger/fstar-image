@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# nix build results (result symlinks)
+result
+result-*
+
+# Makefile build output (check/krml/demo all write under out/)
+out/
+
+# KaRaMeL wasm output dir (flake.nix `hello-wasm` uses `-tmpdir wasm-out`)
+wasm-out/
+
+# F* `.checked` cache, in case `fstar.exe` is run by hand without `--odir`.
+# (The Makefile and default.nix both pass `--odir`, which routes these into
+# out/ or the nix store — but a bare `fstar.exe` run drops them in cwd.)
+*.checked

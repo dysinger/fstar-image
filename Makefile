@@ -46,10 +46,20 @@ KRML_MODS := $(SRC_MODS)
 
 .PHONY: check krml exe clean
 
-check: $(addprefix $(OUT)/checked/,$(addsuffix .checked,$(subst .,_,$(SRC_MODS))))
+# F* names its cache files `<source>.checked` (e.g. src/Hello.fst ->
+# Hello.fst.checked), so the stamp must use the .fst.checked suffix.  Using
+# plain .checked here (as the original xeno/tls Makefile does) leaves `make
+# check` permanently out-of-date and re-verifying every run; this diverges
+# from xeno on purpose to make the advertised dev loop actually incremental.
+check: $(addprefix $(OUT)/checked/,$(addsuffix .fst.checked,$(subst .,_,$(SRC_MODS))))
 
-$(OUT)/checked/%.checked: src/%.fst
+$(OUT)/checked/%.fst.checked: src/%.fst
 	@mkdir -p $(OUT)/checked
+	# Seed the pre-verified stdlib `.checked` cache (FSTAR_CHECKED, exported by
+	# the devShell) so fstar can write our module's .checked file; without the
+	# dependency .checked files, fstar emits Warning 247 and never writes the
+	# stamp, leaving `make check` permanently out-of-date.
+	@cp $(FSTAR_CHECKED)/*.checked $(OUT)/checked/ 2>/dev/null || true
 	@echo "=== $* ==="
 	$(FSTAR) $(FSTAR_FLAGS) \
 	  --z3rlimit 80 \

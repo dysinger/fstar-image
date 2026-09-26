@@ -95,11 +95,11 @@ the `main` entry point) plus a small KaRaMeL JS loader bundle (`main.js`,
 and invokes `main`; it exits `0` on success.  To run it in a browser, serve the
 directory over HTTP and open `main.html`.
 
-> **Note:** the wasm `main` is compute-only (it exercises the verified
-> operations and returns `0`); the greeting text is printed by the native
-> driver, not by the F\* module.  Printing from F\* inside wasm requires the
-> `C.String` runtime, whose wasm dependency chain is not part of this minimal
-> template.
+> **Note:** the F\* module is pure verified computation — `main` exercises the
+> proven operations and returns an exit code; it performs no I/O by design.
+> The native driver (`src/main.c`) demonstrates the verified code by calling
+> `Hello_add` and printing the result; the wasm module runs the same verified
+> `main` (exit `0`).
 
 ## Verify and extract individually
 

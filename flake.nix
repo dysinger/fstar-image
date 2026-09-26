@@ -114,7 +114,11 @@
           version = "0.1.0";
           src = ./. ;
           nativeBuildInputs = [ pkgs.gnumake ];
-          buildInputs = [ pkgs.stdenv.cc fstar karamel fstar-krml fstar-checked hello-krml ];
+          # fstar is needed by the Makefile's `ULIB := $(shell $(FSTAR)
+          # --locate_lib ...)` at parse time; karamel + fstar-krml by the link;
+          # hello-krml is pre-populated.  fstar-checked is intentionally
+          # absent: `make exe` does not reach `make check`, so it is dead input.
+          buildInputs = [ pkgs.stdenv.cc fstar karamel fstar-krml hello-krml ];
           buildPhase = ''
             mkdir -p out/krml
             # Pre-populate with pre-built .krml to skip F* re-extraction.

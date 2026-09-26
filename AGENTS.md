@@ -59,8 +59,9 @@ findings from a brutal pass:
 
 ## Open / deferred (non-blocking)
 
-- **"Add proper wasm back to Xeno"** — explicitly deferred to Xeno, not this
-  template.
+- **"Add proper wasm back to Xeno"** — deferred to the Xeno repo, not this
+  template. The template's `hello-wasm` derivation is the reference recipe to
+  port. See the task list at the end of this file.
 - The `hello-wasm` derivation is a KaRaMeL-native-backend invocation, not a
   `make` target (there is no Makefile wasm step to delegate to; the native link
   is the only Makefile step). This is intentional and documented in flake.nix.
@@ -73,3 +74,101 @@ faithful, minimal copy of the original (variable names, overlay recipe,
 Makefile targets, devShell env exports all correspond), with only the
 multi-package/HACL*/TLS/postgres/audio domain content removed. All targets
 build and run on the dev machine.
+
+---
+
+## TASKS: add wasm back to Xeno (Port plan, reference = this template)
+
+Approach **A** (decided): KaRaMeL-native `-backend wasm`, NOT the historical
+`clang --target=wasm32 + wasm-ld` cross-compile (Xeno commit `10fde426`). Keep
+the Nix target shape (per-package `-krml`-fed `-wasm` derivations), correct
+extraction throughout.
+
+The template's reference recipe (flake.nix `hello-wasm`):
+
+```nix
+packages.hello-wasm = pkgs.stdenv.mkDerivation {
+  name = "hello-wasm";
+  src = ./. ;
+  nativeBuildInputs = [ fstar karamel ];
+  buildPhase = ''
+    mkdir -p wasm-out
+    export KRML_HOME="${karamel.home}"
+    ${karamel}/bin/krml \
+      -tmpdir wasm-out \
+      -backend wasm \
+      -no-prefix ${hello-module} \
+      ${hello-krml}/${hello-module}.krml
+  '';
+  installPhase = ''
+    mkdir -p $out
+    cp wasm-out/* $out/ 2>/dev/null
+    if [ ! -f "$out/${hello-module}.wasm" ]; then
+      echo "ERROR: expected $out/${hello-module}.wasm, but found:" >&2
+      ls -1 "$out" | grep '\.wasm$' >&2 || true
+      exit 1
+    fi
+    echo "wasm: $(ls $out/*.wasm 2>/dev/null | wc -l) .wasm file(s)"
+  '';
+};
+```
+
+### Non-negotiables (carry over from the template)
+
+1. **`-backend wasm`**, not `-wasm` (deprecated alias) and not the
+   `clang --target=wasm32` path.
+2. **`-no-prefix <Module>` is REQUIRED** — it strips the `<Module>_` prefix so
+   the entry point exports as `main` (what `main.js` searches for). Without it
+the export is `<Module>_main` and the loader says "no main in current scope".
+   Thread the prefix per-module, not a hardcoded string.
+3. **Case-exact `.wasm` guard** — always compare the emitted basename against
+   the expected `<Module>.wasm` (case-sensitive) and `exit 1` with the on-disk
+   list on mismatch. The JS loader (`shell.js` `my_modules` + `main.js`'s
+   `<Module>.wasm` read) is case+CWD sensitive.
+4. **Extract the RIGHT modules.** Xeno's extraction filter is `.Low`
+   (`grep '\.Low'` in each `default.nix` + the inline `tls-krml`/`xeno-pg-krml`
+   derivations). The wasm target must consume those same `.krml` outputs, never
+   re-extract from source.
+
+### Task list (in dependency order)
+
+- [ ] **T1 — Pick the pilot package.** Use `codec` (smallest: `Data.Codec`,
+      `Data.Codec.Types`, `Data.Codec.Low`) — its `codec-krml` output has one
+      extractable `Data.Codec.Low.krml`. Confirm `krml -backend wasm -no-prefix
+      Data.Codec.Low codec-krml/Data.Codec.Low.krml` emits
+      `Data.Codec.Low.wasm` + loader under a scratch dir.
+- [ ] **T2 — Add a `codec-wasm` derivation** to `codec/default.nix` (or the
+      top flake) mirroring `hello-wasm`: `buildInputs = [ fstar karamel
+      codec-krml ]`, `-tmpdir wasm-out -backend wasm -no-prefix Data.Codec.Low
+      ${codec-krml}/Data.Codec.Low.krml`, case-exact guard, `installPhase` ships
+      the full loader bundle (`.wasm`, `.wast`, `main.js`, `loader.js`,
+      `shell.js`, `browser.js`, `main.html`, `layouts.json`, no-ext `README`).
+- [ ] **T3 — Wire it into the flake `packages`** (and `legacyPackages`) as
+      `codec-wasm`, retaining the existing `codec-checked`/`codec-krml` targets
+      untouched. Do NOT make it `default` yet.
+- [ ] **T4 — Verify end to end**: `nix build .#codec-wasm`, confirm
+      `result/*.wasm` magic `\0asm`, then `cd result && node main.js` exits 0
+      (or run `WebAssembly.validate` via `nix shell nixpkgs#nodejs_22`).
+- [ ] **T5 — Generalize the recipe** once T4 is green: factor the wasm
+      derivation into a small helper (e.g. a `mk-krml-wasm` function taking
+      `{ src; krml-drv; module; }`) so the remaining packages (`tls`,
+      `xeno-pg`, …) can reuse it instead of copy-pasting the `hello-wasm`
+      body N times.
+- [ ] **T6 — Roll out to the packages that actually need a `main` export.**
+      Not every `-krml` package has a runnable `main` (many are libraries);
+      only emit `-wasm` for packages with a `*.Low.main` (or a demo driver).
+      List them first; do not blindly add wasm to all ~20 packages.
+- [ ] **T7 — Update Xeno's README/AGENTS** to document the wasm targets, the
+      `-no-prefix` requirement, the case-sensitivity trap, and the
+      `cd result && node main.js` invocation.
+
+### Open questions to resolve during T1 (do not guess)
+
+- Does `Data.Codec.Low` have a `main` (or only pure codecs)? If no `main`, wasm
+  still emits the library exports (add/etc.) but `node main.js` will report
+  "no main in current scope" — decide whether Xeno's wasm target is
+  library-export or runnable-entry. The template is runnable-entry (`Hello.main`).
+- For multi-module packages, does a *single* `krml -backend wasm` call accept
+  the concatenated `.krml` set (like the native link's krmllib glob), or must
+  each module be compiled separately and bundled? (Template does one module;
+  Xeno's codec-krml has one `.Low`, but tls has many.)

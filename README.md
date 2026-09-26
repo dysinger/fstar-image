@@ -71,13 +71,14 @@ nix build .#hello-checked .#hello-krml .#hello-exe .#hello-wasm .#hello-fsdoc
 ```bash
 nix build .#hello-exe
 ./result/bin/hello
-# Hello, F*! 10 + 20 = 30
+echo $?   # -> 0
 ```
 
-The executable links the verified `Hello_add` (the extracted form of
-`Hello.add`) through a checked-in two-line C driver (`src/main.c`), which
-KaRaMeL does not generate on its own.  The driver prints the result and
-forwards `Hello_main`'s exit code to the process.
+The executable links the verified module through a checked-in two-line C
+driver (`src/main.c`), which KaRaMeL does not generate on its own.  The driver
+calls `Hello_main` (the extracted form of `Hello.main`, which exercises the
+verified operations) and forwards its exit code (`0`) to the process.  It
+performs no I/O.
 
 ## Run the WebAssembly module
 
@@ -96,10 +97,9 @@ and invokes `main`; it exits `0` on success.  To run it in a browser, serve the
 directory over HTTP and open `main.html`.
 
 > **Note:** the F\* module is pure verified computation — `main` exercises the
-> proven operations and returns an exit code; it performs no I/O by design.
-> The native driver (`src/main.c`) demonstrates the verified code by calling
-> `Hello_add` and printing the result; the wasm module runs the same verified
-> `main` (exit `0`).
+> proven operations and returns an exit code; it performs no I/O, and neither
+> does the native driver.  Both targets run the same verified `main` and exit
+> `0` without printing.
 
 ## Verify and extract individually
 

@@ -11,8 +11,12 @@
 # ── Tools ──────────────────────────────────────────────────────────
 
 CC ?= cc
-CFLAGS = -O3 -fno-strict-aliasing
-LDFLAGS =
+CFLAGS = -O3 -fno-strict-aliasing -ffunction-sections -fdata-sections
+ifeq ($(shell uname),Darwin)
+  LDFLAGS = -Wl,-dead_strip
+else
+  LDFLAGS = -Wl,--gc-sections
+endif
 
 OUT := out
 

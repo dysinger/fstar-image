@@ -7,13 +7,17 @@
       - lemmas proving algebraic properties of those operations at
         verification time (never executed — they are erased before C
         extraction);
-      - a Low* `main` entry point that exercises the verified operations and
-        returns a process exit code, extractable both to a native binary and
-        to a WebAssembly module driven by KaRaMeL's JS loader.
+      - a stateful `St` `main` entry point that exercises the verified
+        operations and returns a process exit code, extractable both to a
+        native binary and to a WebAssembly module driven by KaRaMeL's JS
+        loader.
 
-    Layout for the two-layer pattern (see the F* low-star skill): the pure
-    `Tot` functions and the `Lemma`-typed proofs form the specification layer;
-    the `main` function is the single Low* (`St`) entry point.
+    This is a *plain extractable* module (`module Hello`), NOT a Low* module
+    (`module Hello.Low`).  The `main` function uses F*'s `ST` effect
+    (stateful but heap-free) simply to get an extractable, runnable entry
+    point; it is not Low* code.  For genuine Low* (heap buffers, `Stack`
+    effects) the convention is a `*.Low` suffix plus a two-layer spec/impl
+    split.
 
     @header Hello
 *)
@@ -29,6 +33,7 @@ module U8 = FStar.UInt8
 (** Verified byte operations *)
 
 (** The byte 0x00. *)
+inline_for_extraction
 let zero = 0x00uy
 
 (** Adds two bytes, reduced modulo 256.
@@ -91,8 +96,11 @@ let lemma_xor_involutive (a b: U8.t) : Lemma (xor (xor a b) b == a) =
     operations, not the proofs.  KaRaMeL extracts this function to a `main`
     export that both the native driver and the WebAssembly JS loader invoke.
 
+    Note: `main` uses the `St` effect (stateful, heap-free), not Low*.
+
     @returns [0l] when the program runs to completion. *)
 let main () : St Int32.t =
+  let _ = zero in            (* the byte 0x00: zero is a verified constant *)
   let _ = add 0x0Auy 0x14uy in  (* 10 + 20: add is proven commutative *)
   let _ = xor 0xFFuy 0x0Auy in  (* 0xFF ^ 0x0A: xor is proven involutive *)
   0l

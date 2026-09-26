@@ -51,11 +51,11 @@ let
       cp ${hello-checked}/*.checked $out/ 2>/dev/null || true
       cp ${fstar-checked}/*.checked $out/ 2>/dev/null || true
 
-      # Note: Xeno's codec-krml extracts only `.Low` modules (grep '\.Low').
-      # This template's single module is a plain extractable `Hello` (not
-      # `Hello.Low`), so `grep '\.Low'` would find zero modules and produce an
-      # empty artifact.  We therefore extract from ordered-src-modules (the
-      # same list hello-checked verifies).
+      # Note: a multi-module package typically extracts only its `.Low` modules
+      # (via `grep '\.Low'`).  This template's single module is a plain
+      # extractable `Hello` (not `Hello.Low`), so that filter would find zero
+      # modules and produce an empty artifact.  We therefore extract from
+      # ordered-src-modules (the same list hello-checked verifies).
       for mod in ${builtins.concatStringsSep " " ordered-src-modules}; do
         echo "=== Extracting $mod ==="
         ${fstar-exe} ${fstar-flags} \

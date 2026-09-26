@@ -5,9 +5,10 @@ demonstrates the full verified-to-runnable workflow: a single verified module
 is checked, extracted to C via KaRaMeL, and run as a **native executable** and
 a **WebAssembly module** — all driven by [Nix flakes](https://nixos.wiki/wiki/Flakes).
 
-The build is a clean, single-package reduction of the Xeno build: same overlay,
-same `default.nix`/`Makefile` shape, with the multi-package/HACL*/TLS domain
-content removed.
+The build uses the standard F* + KaRaMeL flake pattern: a nixpkgs overlay
+providing `fstar`, `karamel`, `fstar-checked`, and `fstar-krml`; a `default.nix`
+returning `{ hello-checked; hello-krml; }`; and a `Makefile` with `check` / `krml`
+/ `exe` targets.
 
 ## What the template demonstrates
 

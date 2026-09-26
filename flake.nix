@@ -99,7 +99,7 @@
         # The native executable, produced by the Makefile `exe` target (which
         # links the checked-in src/main.c driver against the extracted module
         # and the krmllib runtime).  Pre-populates the pre-built hello-krml so
-        # `make` skips F* re-extraction, mirroring Xeno's tls-demo derivation.
+        # `make` skips F* re-extraction.
         packages.hello-exe = pkgs.stdenv.mkDerivation {
           pname = "hello-exe";
           version = "0.1.0";

@@ -1,8 +1,5 @@
 # hello — dev-loop build (F* verify + KaRaMeL extract + native link).
 #
-# A minimal subset of the canonical Xeno Makefile (see tls/Makefile), with the
-# HACL*/TLS/vector domain content removed.
-#
 # Usage: nix develop, then `make check` / `make krml` / `make exe`.
 #
 # The FSTAR_KRML / KRML_HOME / KRM_LIB / KRM_INC env vars are exported by the

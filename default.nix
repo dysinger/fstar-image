@@ -27,6 +27,9 @@ let
     version = "0.1.0";
     src = ./.;
     nativeBuildInputs = [ fstar ];
+    # Intentional (mirrors xeno/codec/default.nix): write straight to $out in
+    # buildPhase and no-op installPhase — these derivations just stage a
+    # directory of compiler artifacts, not a build/install split.
     buildPhase = ''
       mkdir -p $out
       cp ${fstar-checked}/*.checked $out/ 2>/dev/null || true

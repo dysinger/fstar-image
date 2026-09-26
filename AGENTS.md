@@ -148,6 +148,26 @@ packages.hello-wasm = pkgs.stdenv.mkDerivation {
 > The port must produce **library wasm** unless a package happens to have a
 > demo/entry module with a `main`.
 
+### Packaging model (authoritative — from the fstar-build skill)
+
+Xeno packages follow the F* **per-package passthru variant** model (fstar-build
+§4): each package yields its `{ foo-checked, foo-krml }` outputs *plus*
+four passthru variants keyed on the same source:
+
+| Passthru | Output |
+|----------|--------|
+| `ocaml` | `.ml` source only |
+| `opam`  | compiled OCaml (`.cmxa` + `META` in site-lib) |
+| `native`| `.so` + `.h` (compiled C; **no `.krml`**) |
+| `wasm`  | `.wasm` |
+
+So the correct Xeno shape is not a *separate* `codec-wasm` derivation that
+re-implements extraction; it is the **`wasm` passthru variant** of the existing
+`codec-krml` derivation — take the already-extracted `Data.Codec.Low.krml` and
+run `krml -backend wasm` on it to emit `Data.Codec.Low.wasm`.  This mirrors
+`native` (which compiles the `.krml` to `.so`/`.h`) and keeps extraction
+correctly single-sourced from `codec-krml`.
+
 ### Task list (in dependency order)
 
 - [ ] **T1 — Pilot on `codec` as a LIBRARY (no `main`).**  Confirm
@@ -155,18 +175,19 @@ packages.hello-wasm = pkgs.stdenv.mkDerivation {
       emits `Data.Codec.Low.wasm` with the `Data.Codec.Low.*` exports (decode/
       encode), and validate via `wasm-objdump -x` / `WebAssembly.validate` —
       NOT via `node main.js` (there is nothing to run).
-- [ ] **T2 — Add a `codec-wasm` derivation** mirroring `hello-wasm` minus
-      `-no-prefix` and the `main`-loader assumption: `-tmpdir wasm-out
-      -backend wasm ${codec-krml}/Data.Codec.Low.krml`, case-exact guard,
-      `installPhase` ships `.wasm`/`.wast` (and the JS bundle only if a runner
-      is wanted; for a library, `.wasm`/`.wast` + headers suffice).
+- [ ] **T2 — Add the `wasm` passthru variant** to `codec/default.nix` (next to
+      `native`, if present): take `${codec-krml}`'s `Data.Codec.Low.krml`,
+      `-tmpdir wasm-out -backend wasm <that>.krml`, case-exact guard,
+      `installPhase` ships `Data.Codec.Low.wasm` (+ `.wast`).  No `-no-prefix`,
+      no `main.js` loader (library).
 - [ ] **T3 — Wire it in** as `codec-wasm` in `packages`/`legacyPackages`,
       leaving `codec-checked`/`codec-krml` untouched. Not `default`.
 - [ ] **T4 — Verify**: `.wasm` magic `\0asm`, `wasm-objdump -x` shows the
       expected `Data.Codec.Low.*` exports (no `main`), and optionally
       `WebAssembly.validate`.
-- [ ] **T5 — Generalize**: factor `mk-krml-wasm { src; krml-drv; module; }`
-      (no `-no-prefix`) for reuse across library packages.
+- [ ] **T5 — Generalize**: factor `mk-krml-wasm { krml-drv; module; }`
+      (no `-no-prefix`) as the shared passthru helper, keyed off the existing
+      `-krml` output — NOT off source.
 - [ ] **T6 — Roll out to library packages** that have a `*.Low` extractable
       surface; skip any package with zero extractable modules.  (Optional,
       separate: a single demo package that bundles a `main` wrapper if a

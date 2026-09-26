@@ -1,11 +1,11 @@
 # hello — minimal verified F* package.
 #
 # Takes pkgs with fstar, karamel, fstar-checked in scope (from the nixpkgs
-# overlay in the top-level flake).
+# overlay in the top-level flake), plus the name of the single source module.
 #
 # Returns { hello-checked, hello-krml }.
 
-{ pkgs }:
+{ pkgs, module-name ? "Hello" }:
 
 let
   inherit (pkgs) stdenv fstar karamel fstar-checked;
@@ -17,8 +17,10 @@ let
   fstar-flags = "--no_default_includes --include ${ulib} --include ./src --include ${krmllib} --include ${krmllib}/obj --z3rlimit 80";
 
   # Source modules in DEPENDENCY ORDER (leaf modules first).  Required so the
-  # .checked files land in $out in the right order (Warning 247).
-  ordered-src-modules = [ "Hello" ];
+  # .checked files land in $out in the right order (Warning 247).  This
+  # template has a single source module; its name is threaded in from the
+  # top-level flake rather than hardcoded.
+  ordered-src-modules = [ module-name ];
 
   hello-checked = stdenv.mkDerivation {
     pname = "hello-checked";

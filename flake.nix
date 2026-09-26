@@ -86,9 +86,18 @@
 
         inherit (pkgs) stdenv fstar karamel fstar-checked fstar-krml;
 
+        # The F* module name, threaded into downstream stages.  Changing it
+        # must also update the Hello_* C symbols in src/main.c (which cannot
+        # be auto-derived without codegen).
+        hello-module = "Hello";
+
         # The package (verify + extract), in the codec/default.nix shape.
-        _hello = import ./default.nix { inherit pkgs; };
+        _hello = import ./default.nix {
+          inherit pkgs;
+          module-name = hello-module;
+        };
         inherit (_hello) hello-checked hello-krml;
+
       in
       {
         packages = {
@@ -129,26 +138,45 @@
 
         # Wasm: krml's wasm backend emits `<Module>.wasm` plus a JS loader
         # bundle.  Ship all of it (run with `node main.js`).
+        #
+        # KaRaMeL has a first-class wasm backend (`krml -backend wasm` / `-wasm`,
+        # see `krml --help`): it emits the `<Module>.wasm` module and its JS
+        # loader directly, so this derivation invokes it rather than a `make`
+        # target (there is no Makefile link step for wasm).
+        #
+        # `-no-prefix` strips the `<Module>_` prefix from the exported entry
+        # point, so `Hello.main` is exported as plain `main` — the name the
+        # generated JS loader (`main.js`) looks for.  Without it the export is
+        # `Hello_main` and the loader reports "no main in current scope".
         packages.hello-wasm = pkgs.stdenv.mkDerivation {
           name = "hello-wasm";
           src = ./.;
           nativeBuildInputs = [ fstar karamel ];
           buildPhase = ''
-            mkdir -p $out
+            mkdir -p wasm-out
             export KRML_HOME="${karamel.home}"
             ${karamel}/bin/krml \
               -tmpdir wasm-out \
               -backend wasm \
-              -no-prefix Hello \
-              ${hello-krml}/Hello.krml
+              -no-prefix ${hello-module} \
+              ${hello-krml}/${hello-module}.krml
+          '';
+          installPhase = ''
+            mkdir -p $out
             cp wasm-out/* $out/ 2>/dev/null
-            if ! ls $out/*.wasm >/dev/null 2>&1; then
-              echo "ERROR: no .wasm produced" >&2
+            # Guard against a case/suffix mismatch between the module name in
+            # shell.js's my_modules list, the emitted .wasm filename, and the
+            # JS loader's hardcoded `<Module>.wasm` reference (all
+            # case-sensitive).  Compare the exact basename, not a glob, so a
+            # rename that changes the on-disk case fails loudly here rather
+            # than at `node main.js` runtime with "no main in current scope".
+            if [ ! -f "$out/${hello-module}.wasm" ]; then
+              echo "ERROR: expected $out/${hello-module}.wasm, but found:" >&2
+              ls -1 "$out" | grep '\.wasm$' >&2 || true
               exit 1
             fi
             echo "wasm: $(ls $out/*.wasm 2>/dev/null | wc -l) .wasm file(s)"
           '';
-          installPhase = "true";
         };
 
         # fsdoc: extract `(** ... *)` comments to Markdown.
@@ -185,5 +213,23 @@
             ];
           };
       }
-    );
+    ) // {
+      # Nix flake template (`nix flake init -t .`).  See README "Using as a
+      # template".
+      templates.default = {
+        path = ./.;
+        description = "Minimal verified F* project (Hello World) that builds to a native exe and WebAssembly";
+        welcomeText = ''
+          # F* verified project template
+
+          A minimal, self-contained F* module verified, extracted via KaRaMeL,
+          and runnable as a native executable and a WebAssembly module.
+
+          - Build everything:  nix build .#hello-checked .#hello-krml .#hello-exe .#hello-wasm .#hello-fsdoc
+          - Dev loop:          nix develop && make check && make exe
+          - Run the native exe: nix build .#hello-exe && ./result/bin/hello
+          - Run the wasm:      nix build .#hello-wasm && cd result && node main.js
+        '';
+      };
+    };
 }

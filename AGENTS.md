@@ -148,18 +148,26 @@ packages.hello-wasm = pkgs.stdenv.mkDerivation {
 > The port must produce **library wasm** unless a package happens to have a
 > demo/entry module with a `main`.
 
-### Packaging model (authoritative — from the fstar-build skill)
+### Packaging model (authoritative — from the fstar-build skill + fstar.exe)
 
-Xeno packages follow the F* **per-package passthru variant** model (fstar-build
-§4): each package yields its `{ foo-checked, foo-krml }` outputs *plus*
-four passthru variants keyed on the same source:
+Xeno packages follow the F* **per-package passthru variant** model: each
+package yields its `{ foo-checked, foo-krml }` outputs *plus* passthru
+variants keyed on the same source.  `fstar.exe --codegen` supports the
+backends `{OCaml, FSharp, krml, Plugin, PluginNoLib, Extension}` (confirmed
+via `fstar.exe --help`), so the passthru variants are:
 
-| Passthru | Output |
-|----------|--------|
-| `ocaml` | `.ml` source only |
-| `opam`  | compiled OCaml (`.cmxa` + `META` in site-lib) |
-| `native`| `.so` + `.h` (compiled C; **no `.krml`**) |
-| `wasm`  | `.wasm` |
+| Passthru | Backend | Output |
+|----------|---------|--------|
+| `ocaml`  | `--codegen OCaml` | `.ml` source only |
+| `fsharp` | `--codegen FSharp` | `.fs` source only |
+| `opam`   | (compile `ocaml`) | compiled OCaml (`.cmxa` + `META` in site-lib) |
+| `native` | (compile `krml` C) | `.so` + `.h` (compiled C; **no `.krml`**) |
+| `wasm`   | `krml -backend wasm` | `.wasm` |
+
+> The fstar-build skill's own table lists only `ocaml`/`opam`/`native`/`wasm`
+> (4 variants) and omits `fsharp`; `fstar.exe --codegen FSharp` is real (and
+> Xeno's own history — commit `10fde426` — records "OCaml ✓ / F# ✓ / WASM ✓").
+> Treat `fsharp` (`.fs` source, sibling of `ocaml`) as a first-class variant.
 
 So the correct Xeno shape is not a *separate* `codec-wasm` derivation that
 re-implements extraction; it is the **`wasm` passthru variant** of the existing

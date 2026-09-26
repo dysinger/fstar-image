@@ -31,9 +31,6 @@ KRML  ?= krml
 ifeq ($(FSTAR_KRML),)
 $(error FSTAR_KRML is not set; run `nix develop` (or export it yourself) before `make`)
 endif
-ifeq ($(FSTAR_CHECKED),)
-$(error FSTAR_CHECKED is not set; run `nix develop` (or export it yourself) before `make check`)
-endif
 ifeq ($(KRML_HOME),)
 $(error KRML_HOME is not set; run `nix develop` (or export it yourself) before `make`)
 endif
@@ -69,6 +66,9 @@ check: $(addprefix $(OUT)/checked/,$(addsuffix .fst.checked,$(subst .,_,$(SRC_MO
 
 $(OUT)/checked/%.fst.checked: src/%.fst
 	@mkdir -p $(OUT)/checked
+	@test -n "$(FSTAR_CHECKED)" || { \
+	  echo "ERROR: FSTAR_CHECKED is not set; run \`nix develop\` (or export it yourself) before \`make check\`" >&2; \
+	  exit 1; }
 	# Seed the pre-verified stdlib `.checked` cache (FSTAR_CHECKED, exported by
 	# the devShell) so fstar can write our module's .checked file; without the
 	# dependency .checked files, fstar emits Warning 247 and never writes the

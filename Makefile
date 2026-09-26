@@ -20,12 +20,26 @@ OUT := out
 FSTAR ?= fstar.exe
 KRML  ?= krml
 
-KRM_LIB   ?= $$KRM_LIB
-KRM_INC   ?= $$KRM_INC
-KRML_HOME ?= $$KRML_HOME
+# These are supplied by the flake devShell's shellHook, which exports
+# FSTAR_KRML / FSTAR_CHECKED / KRML_HOME / KRM_LIB / KRM_INC.  Make imports
+# them from the environment as ordinary variables of the same name; passing
+# e.g. `make exe KRM_LIB=/elsewhere` on the command line simply overrides the
+# environment import.  No `?=` here (a same-name `?= $(VAR)` is a recursive
+# self-reference when the env var is missing).  The guards below make a
+# missing value fail loudly instead of silently mis-resolving.
 
-FSTAR_KRML    ?= $$FSTAR_KRML
-FSTAR_CHECKED ?= $$FSTAR_CHECKED
+ifeq ($(FSTAR_KRML),)
+$(error FSTAR_KRML is not set; run `nix develop` (or export it yourself) before `make`)
+endif
+ifeq ($(FSTAR_CHECKED),)
+$(error FSTAR_CHECKED is not set; run `nix develop` (or export it yourself) before `make check`)
+endif
+ifeq ($(KRML_HOME),)
+$(error KRML_HOME is not set; run `nix develop` (or export it yourself) before `make`)
+endif
+ifeq ($(KRM_LIB),)
+$(error KRM_LIB is not set; run `nix develop` (or export it yourself) before `make`)
+endif
 
 KRM_LIB_A ?= $(KRM_LIB)/dist/generic/libkrmllib.a
 
@@ -106,10 +120,10 @@ $(EXE_BIN): $(addprefix $(OUT)/krml/,$(addsuffix .krml,$(subst .,_,$(KRML_MODS))
 	  $(addprefix $(OUT)/krml/,$(addsuffix .krml,$(subst .,_,$(KRML_MODS))))
 	@rm -f $(OUT)/krml/*.o
 	@for cfile in $(OUT)/krml/*.c; do \
-	  $(CC) $(CFLAGS) -std=c11 -I $(OUT)/krml $(KRM_INC) \
+	  $(CC) $(CFLAGS) -std=c11 -I$(OUT)/krml $(KRM_INC) \
 	    -c $$cfile -o $${cfile%.c}.o; \
 	done
-	$(CC) $(CFLAGS) $(LDFLAGS) -std=c11 -I $(OUT)/krml $(KRM_INC) \
+	$(CC) $(CFLAGS) $(LDFLAGS) -std=c11 -I$(OUT)/krml $(KRM_INC) \
 	  -o $@ src/main.c \
 	  $(OUT)/krml/*.o \
 	  $(KRM_LIB_A)

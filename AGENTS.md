@@ -152,29 +152,48 @@ packages.hello-wasm = pkgs.stdenv.mkDerivation {
 
 Xeno packages follow the F* **per-package passthru variant** model: each
 package yields its `{ foo-checked, foo-krml }` outputs *plus* passthru
-variants keyed on the same source.  `fstar.exe --codegen` supports the
-backends `{OCaml, FSharp, krml, Plugin, PluginNoLib, Extension}` (confirmed
-via `fstar.exe --help`), so the passthru variants are:
+variants keyed on the same source.  There are **two distinct extraction
+systems** with a total of **five real output languages**:
+
+| System | Flag | Outputs |
+|--------|------|---------|
+| F* `fstar.exe --codegen` | `OCaml` | `.ml` |
+| F* `fstar.exe --codegen` | `FSharp` | `.fs` |
+| F* `fstar.exe --codegen` | `krml` | `.krml` (intermediate IR) |
+| KaRaMeL `krml -backend` | `c` (default) | `.c`/`.h` |
+| KaRaMeL `krml -backend` | `rust` | `.rs` |
+| KaRaMeL `krml -backend` | `wasm` | `.wasm` |
+
+(Note: `fstar.exe --codegen` also lists `Plugin`/`PluginNoLib`/`Extension`, but
+those are compiler-plugin/extension-building modes — NOT output languages.
+Confirmed via `fstar.exe --help` and `krml --help`.)
+
+The per-package passthru variants map onto the real languages as:
 
 | Passthru | Backend | Output |
 |----------|---------|--------|
-| `ocaml`  | `--codegen OCaml` | `.ml` source only |
-| `fsharp` | `--codegen FSharp` | `.fs` source only |
+| `ocaml`  | `fstar.exe --codegen OCaml` | `.ml` source |
+| `fsharp` | `fstar.exe --codegen FSharp` | `.fs` source |
 | `opam`   | (compile `ocaml`) | compiled OCaml (`.cmxa` + `META` in site-lib) |
-| `native` | (compile `krml` C) | `.so` + `.h` (compiled C; **no `.krml`**) |
+| `native` | `krml -backend c` (compile) | `.so` + `.h` (compiled C; **no `.krml`**) |
+| `rust`   | `krml -backend rust` | `.rs` (Rust translation; `-crate`/`-fno-box`/`-bundle` are Rust-specific) |
 | `wasm`   | `krml -backend wasm` | `.wasm` |
 
 > The fstar-build skill's own table lists only `ocaml`/`opam`/`native`/`wasm`
-> (4 variants) and omits `fsharp`; `fstar.exe --codegen FSharp` is real (and
-> Xeno's own history — commit `10fde426` — records "OCaml ✓ / F# ✓ / WASM ✓").
-> Treat `fsharp` (`.fs` source, sibling of `ocaml`) as a first-class variant.
+> (4 variants) and omits BOTH `fsharp` AND `rust`.  Both are real:
+> `fstar.exe --codegen FSharp` (Xeno history `10fde426` records "OCaml ✓ / F# ✓
+> / WASM ✓"), and `krml -backend rust` (whose `-crate`/`-fno-box` flags confirm
+> a first-class Rust backend).  Treat `fsharp` (`.fs`) and `rust` (`.rs`) as
+> first-class variants alongside the rest.
 
 So the correct Xeno shape is not a *separate* `codec-wasm` derivation that
 re-implements extraction; it is the **`wasm` passthru variant** of the existing
 `codec-krml` derivation — take the already-extracted `Data.Codec.Low.krml` and
 run `krml -backend wasm` on it to emit `Data.Codec.Low.wasm`.  This mirrors
 `native` (which compiles the `.krml` to `.so`/`.h`) and keeps extraction
-correctly single-sourced from `codec-krml`.
+correctly single-sourced from `codec-krml`.  (`rust` would similarly be a
+passthru of `codec-krml` via `krml -backend rust`; `fsharp` a passthru of the
+`fstar.exe --codegen FSharp` source extraction, sibling of `ocaml`.)
 
 ### Task list (in dependency order)
 

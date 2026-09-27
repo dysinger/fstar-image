@@ -11,6 +11,9 @@ nix flake init -t github:dysinger/fstar-nix-flake-template
 
 # 3. Build it.
 nix build
+
+# 4. Drop into the dev loop (fstar.exe, krml, OCaml LSP already on PATH).
+nix develop
 ```
 
 Done.  The single `pname` edit renames every output automatically — see

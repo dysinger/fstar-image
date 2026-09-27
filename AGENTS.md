@@ -41,10 +41,10 @@ findings from a brutal pass:
 | `.#hello-checked` | F* verification + stdlib `.checked` cache |
 | `.#hello-krml` | KaRaMeL extraction (`Hello.krml` — IR) |
 | `.#hello-exe` | native exe `bin/hello` (exit 0) |
-| `.#hello-native` | C library `Hello.c` + `Hello.h` |
-| `.#hello-rust` | Rust source `hello.rs` (compiles as `--crate-type lib`) |
-| `.#hello-ocaml` | OCaml source `Hello.ml` |
-| `.#hello-fsharp` | F# source `Hello.fs` |
+| `.#hello-native` | C library `libhello.so` + `Hello.h` (compiled via `cc -shared`) |
+| `.#hello-rust` | Rust rlib `libhello.rlib` (compiled via `rustc --crate-type lib`) |
+| `.#hello-ocaml` | OCaml findlib package `hello.cmxa`/`.cmi` (via `ocamlPackages.buildDunePackage`) |
+| `.#hello-fsharp` | F# source `Hello.fs` (Fantomas cannot parse F*'s `#light "off"` output) |
 | `.#hello-wasm` | `Hello.wasm` + JS loader (`node main.js` exit 0) |
 | `.#hello-fsdoc` | fsdoc → Markdown |
 | `templates.default` | nix flake init -t |
@@ -53,12 +53,12 @@ findings from a brutal pass:
 
 | System | Backend | Attribute | Output |
 |--------|---------|-----------|--------|
-| `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `.ml` |
+| `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `hello.cmxa` (findlib pkg) |
 | `fstar.exe --codegen` | `FSharp` | `.#hello-fsharp` | `.fs` |
 | `fstar.exe --codegen` | `krml` | `.#hello-krml` | `.krml` (IR) |
-| `krml -backend` | `c` | `.#hello-native` | `.c`/`.h` |
-| `krml -backend` | `rust` | `.#hello-rust` | `.rs` |
-| `krml -backend` | `wasm` | `.#hello-wasm` | `.wasm` |
+| `krml -backend` | `c` | `.#hello-native` | `libhello.so` + `.h` |
+| `krml -backend` | `rust` | `.#hello-rust` | `libhello.rlib` |
+| `krml -backend` | `wasm` | `.#hello-wasm` | `Hello.wasm` |
 
 (`fstar.exe --codegen` also lists `Plugin`/`PluginNoLib`/`Extension`, but those
 are compiler-plugin/extension-building modes, not output languages.)

@@ -210,18 +210,6 @@
           '';
         };
 
-        # fsdoc: extract `(** ... *)` comments to Markdown.
-        packages."${pname}-fsdoc" = pkgs.stdenv.mkDerivation {
-          name = "${pname}-fsdoc";
-          src = ./.;
-          nativeBuildInputs = [ pkgs.python3 ];
-          buildPhase = ''
-            mkdir -p $out
-            ${pkgs.python3}/bin/python3 scripts/fsdoc.py $out/fstar-docs.md
-          '';
-          installPhase = "true";
-        };
-
         # ── F* source extraction backends ───────────────────────────────
         #
         # `fstar.exe --codegen <OCaml|krml>` extracts the module to a source
@@ -407,7 +395,7 @@ DUNE
           - Build everything: nix build \
               .#fstar-example-checked .#fstar-example-krml .#fstar-example-exe \
               .#fstar-example-native .#fstar-example-rust .#fstar-example-ocaml \
-              .#fstar-example-wasm .#fstar-example-fsdoc
+              .#fstar-example-wasm
           - Dev loop:         nix develop && make check && make exe
           - Run native exe:   nix build .#fstar-example-exe && ./result/bin/fstar-example
           - Run the wasm:     nix build .#fstar-example-wasm && cd result && node main.js

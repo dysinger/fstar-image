@@ -58,13 +58,11 @@ connection to fetch `nixpkgs`, `fstar`, and `karamel`.
 
 ```
 .
-├── flake.nix          # Nix build: verify / extract / exe / wasm / fsdoc / devShell
+├── flake.nix          # Nix build: verify / extract / exe / wasm / devShell
 ├── default.nix        # Package: returns { checked; krml; }
 ├── Makefile           # Dev-loop: make check / make krml / make exe
-├── src/
-│   └── Example.fst    # The verified F* example module (extracts to C / OCaml / Rust / ...)
-└── scripts/
-    └── fsdoc.py       # fsdoc comment extractor
+└── src/
+    └── Example.fst    # The verified F* example module (extracts to C / OCaml / Rust / ...)
 ```
 
 (The native C driver `main.c` is **generated** by the Makefile from the
@@ -117,7 +115,6 @@ That's it.  Everything else follows from `pname` automatically:
 | `.#fstar-example-rust` | Rust library (`libfstar-example.rlib`) | no |
 | `.#fstar-example-ocaml` | OCaml findlib package (`fstar-example.cmxa` + `fstar-example.cmi`) | no |
 | `.#fstar-example-wasm` | WebAssembly module + JS loader bundle | **yes** |
-| `.#fstar-example-fsdoc` | `fsdoc` comments → Markdown | no |
 
 `nix build` with no argument builds the default package (`fstar-example-krml`).
 
@@ -168,7 +165,7 @@ FSharp`, then `dotnet build` against the runtime).  Until then, no F# target.
 ```bash
 nix build \
   .#fstar-example-checked .#fstar-example-krml .#fstar-example-exe .#fstar-example-native \
-  .#fstar-example-rust .#fstar-example-ocaml .#fstar-example-wasm .#fstar-example-fsdoc
+  .#fstar-example-rust .#fstar-example-ocaml .#fstar-example-wasm
 ```
 
 ## Run the native executable
@@ -218,16 +215,6 @@ nix build .#fstar-example-krml      # KaRaMeL extraction only (depends on checke
 ~421 pre-verified standard-library `.checked` files (the downstream
 verification cache).  Your module's `.checked` is the one named
 `Example.fst.checked`.
-
-## Document (fsdoc)
-
-```bash
-nix build .#fstar-example-fsdoc
-cat result/fstar-docs.md
-```
-
-`scripts/fsdoc.py` extracts `(** ... *)` doc comments from `src/*.fst` into a
-single Markdown outline.
 
 ## Dev loop (`nix develop` + Makefile)
 

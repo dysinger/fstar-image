@@ -32,17 +32,36 @@ findings from a brutal pass:
   has loud guards for the devShell env vars.
 - `.gitignore` covers the full KaRaMeL wasm/web scatter + `*.krml`/`*.o`.
 - `templates.default` output added (`nix flake init -t .` works).
+- Every supported F* extraction target has a flake attribute (see below).
 
 ## Targets (all verified this session)
 
 | Flake attribute | Result |
 |-----------------|--------|
 | `.#hello-checked` | F* verification + stdlib `.checked` cache |
-| `.#hello-krml` | KaRaMeL extraction (`Hello.krml`) |
+| `.#hello-krml` | KaRaMeL extraction (`Hello.krml` — IR) |
 | `.#hello-exe` | native exe `bin/hello` (exit 0) |
+| `.#hello-native` | C library `Hello.c` + `Hello.h` |
+| `.#hello-rust` | Rust source `hello.rs` (compiles as `--crate-type lib`) |
+| `.#hello-ocaml` | OCaml source `Hello.ml` |
+| `.#hello-fsharp` | F# source `Hello.fs` |
 | `.#hello-wasm` | `Hello.wasm` + JS loader (`node main.js` exit 0) |
 | `.#hello-fsdoc` | fsdoc → Markdown |
 | `templates.default` | nix flake init -t |
+
+### Extraction-target matrix (the complete set)
+
+| System | Backend | Attribute | Output |
+|--------|---------|-----------|--------|
+| `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `.ml` |
+| `fstar.exe --codegen` | `FSharp` | `.#hello-fsharp` | `.fs` |
+| `fstar.exe --codegen` | `krml` | `.#hello-krml` | `.krml` (IR) |
+| `krml -backend` | `c` | `.#hello-native` | `.c`/`.h` |
+| `krml -backend` | `rust` | `.#hello-rust` | `.rs` |
+| `krml -backend` | `wasm` | `.#hello-wasm` | `.wasm` |
+
+(`fstar.exe --codegen` also lists `Plugin`/`PluginNoLib`/`Extension`, but those
+are compiler-plugin/extension-building modes, not output languages.)
 
 ## Important corrections to earlier handoff notes
 

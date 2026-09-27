@@ -8,7 +8,7 @@ result-*
 # Makefile build output (check/krml/demo all write under out/)
 out/
 
-# KaRaMeL wasm output dir (flake.nix `hello-wasm` uses `-tmpdir wasm-out`)
+# KaRaMeL wasm output dir (fstar-example-wasm uses `-tmpdir wasm-out`)
 wasm-out/
 
 # F* `.checked` cache, in case `fstar.exe` is run by hand without `--odir`.
@@ -21,13 +21,14 @@ wasm-out/
 *.o
 
 # KaRaMeL wasm/web loader bundle, in case `krml -backend wasm` is run by hand
-# without `-tmpdir` (the flake hello-wasm derivation routes these into wasm-out/).
-README
-loader.js
-main.js
-shell.js
-browser.js
-main.html
-layouts.json
+# without `-tmpdir` (the fstar-example-wasm derivation routes these into wasm-out/).
+# The extensionless README loader file is ignored ONLY under wasm-out/.
+wasm-out/README
+wasm-out/loader.js
+wasm-out/main.js
+wasm-out/shell.js
+wasm-out/browser.js
+wasm-out/main.html
+wasm-out/layouts.json
 *.wasm
 *.wast

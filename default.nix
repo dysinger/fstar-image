@@ -107,7 +107,7 @@ let
     installPhase = ''
       mkdir -p $out/bin
       cp $out/${pname} $out/bin/
-      rm -f "$out/${pname}"
+      rm -f "$out/${pname}" "$out/main.c"
       rm -rf "$out/checked" "$out/krml"
     '';
   };

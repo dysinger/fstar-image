@@ -157,7 +157,8 @@
           1. nix flake init -t github:dysinger/fstar-nix-flake-template
           2. rename src/Example.fst -> src/<YourModule>.fst and its
              `module Example` header (a real rename, not a one-line edit)
-          3. edit `pname` in flake.nix (`pname = "fstar-example";`) to match
+          3. edit `pname` in default.nix and the literal package names in
+             flake.nix to match
           4. nix build
 
           - Build everything: nix build \

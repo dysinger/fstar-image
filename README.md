@@ -24,7 +24,7 @@ nix develop
 
 A minimal, self-contained [F*](https://www.fstar-lang.org/) project that
 demonstrates the full verified-to-runnable workflow: a single verified module
-is checked, extracted via KaRaMeL, and compiled to **C** (native executable +
+is checked, extracted via KaRaMeL, and compiled to **C** (native executable,
 shared library), **Rust**, **OCaml**, and **WebAssembly** — all driven by
 [Nix flakes](https://nixos.wiki/wiki/Flakes).
 

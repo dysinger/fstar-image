@@ -1,5 +1,8 @@
 # F* Project Template
 
+Copyright 2026 Department of Code LLC.
+SPDX-License-Identifier: AGPL-3.0-or-later
+
 ## Getting started
 
 ```bash
@@ -260,15 +263,24 @@ Vim) at it for hover docs, diagnostics, and completions.
   `Makefile` generates `main.c` from the KaRaMeL-emitted header.  (Renaming the
   *project* — `pname` — is separate and does NOT require renaming this module.)
 - **Add more modules** — list them (in dependency order, leaf modules first) in
-  `ordered-src-modules` in `default.nix`; the `Makefile` auto-discovers modules
-  from `src/*.fst`.
+  `ordered-src-modules` in `default.nix`.  The `Makefile` auto-discovers modules
+  from `src/*.fst`; for a multi-module package you should also override
+  `SRC_MODS` in the `Makefile` with the same explicit ordered list, so the dev
+  loop verifies leaf-first (an alphabetical `sort` would verify a dependent
+  module before its prerequisite and trigger F* Warning 247).
 - **Ship a library instead of an exe** — drop the `make exe` target and the
   `${pname}-exe` derivation; the `${pname}-krml` output is the library's
-  extracted `.krml`/C.
+  extracted `.krml`/C.  When the package has `.Low` modules, `make krml` (and
+  the `default.nix` `krml` derivation) extract only those `.Low` modules
+  automatically; a plain extractable module with no `.Low` (like `Example`)
+  extracts as itself.
 
 Module naming: this example is a *plain extractable* module (`module Example`).
 For stateful Low\* code (heap buffers, `Stack` effects), the ecosystem
-convention is a `*.Low` suffix plus a two-layer spec/impl split.
+convention is a `*.Low` suffix plus a two-layer spec/impl split.  A namespaced
+module (`module Data.Codec.Types`) is fully supported: F\* preserves the dots
+in the `.fst.checked` cache filename (`Data.Codec.Types.fst.checked`) while the
+KaRaMeL extraction name turns dots into underscores (`Data_Codec_Types.krml`).
 
 ## How the entry points work
 

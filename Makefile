@@ -1,3 +1,6 @@
+# Copyright 2026 Department of Code LLC.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # F* dev-loop build (verify + KaRaMeL extract + native link).
 #
 # Usage: nix develop, then `make check` / `make krml` / `make exe`.
@@ -51,9 +54,21 @@ FSTAR_FLAGS = --no_default_includes \
 
 # ── F* verification ───────────────────────────────────────────────
 
-SRC_MODS := $(shell grep -h '^module ' src/*.fst 2>/dev/null | \
+# Source modules, auto-discovered from `module Foo` in src/*.fst in
+# DEPENDENCY ORDER.  For the single-module runnable Example this is trivially
+# correct.  For a multi-module library the modules must verify leaf-first
+# (otherwise F* warns 247 and re-checks out of order), so a library SHOULD
+# override this with an explicit ordered list, e.g.:
+#   SRC_MODS := Data.Codec.Types Data.Codec Data.Codec.Low
+# (keep it in sync with `ordered-src-modules` in default.nix).
+SRC_MODS ?= $(shell grep -h '^module ' src/*.fst 2>/dev/null | \
   grep -v '^module .* = ' | sed 's/^module //' | sort)
-KRML_MODS := $(SRC_MODS)
+
+# Modules to extract to C via KaRaMeL.  A library extracts only its `.Low`
+# (C-extractable) modules; the single runnable Example is a plain extractable
+# module with no `.Low`, so fall back to all of SRC_MODS in that case.
+_LO_MODS := $(filter %.Low,$(SRC_MODS))
+KRML_MODS := $(if $(_LO_MODS),$(_LO_MODS),$(SRC_MODS))
 
 # The source module name is auto-discovered from `module Foo` in src/*.fst,
 # so a module rename (file + `module` header) needs NO Makefile edit.  MODULE
@@ -66,12 +81,13 @@ PNAME  ?= $(shell printf '%s' '$(MODULE)' | tr 'A-Z' 'a-z')
 
 .PHONY: check krml exe clean
 
-# F* names its cache files `<source>.checked` (e.g. src/Example.fst ->
-# Example.fst.checked), so the stamp must use the .fst.checked suffix.  Using
-# plain .checked here (as the original xeno/tls Makefile does) leaves `make
-# check` permanently out-of-date and re-verifying every run; this diverges
-# from xeno on purpose to make the advertised dev loop actually incremental.
-check: $(addprefix $(OUT)/checked/,$(addsuffix .fst.checked,$(subst .,_,$(SRC_MODS))))
+# F* names its cache files `<source>.checked` (e.g. src/Data.Codec.fst ->
+# Data.Codec.fst.checked) — the module's DOTS ARE PRESERVED in the .checked
+# filename (only the .krml extraction name turns dots into underscores).  So
+# the `check` prerequisite MUST use the raw module name, not `subst .,_`.
+# (`subst .,_` here would look for Data_Codec.fst.checked, which F* never
+# writes, leaving `make check` permanently out-of-date.)
+check: $(addprefix $(OUT)/checked/,$(addsuffix .fst.checked,$(SRC_MODS)))
 
 $(OUT)/checked/%.fst.checked: src/%.fst
 	@mkdir -p $(OUT)/checked

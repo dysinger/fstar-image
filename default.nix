@@ -129,16 +129,18 @@ let
         -skip-compilation \
         -tmpdir native-out \
         ${krml}/${src-module}.krml
+      # Shared-object suffix per platform (.dylib on macOS, .so elsewhere).
+      if [ "$(uname)" = Darwin ]; then so_ext=dylib; else so_ext=so; fi
       cc -shared -fPIC \
         -I"${karamel.home}/include" \
         -I"${karamel.home}/krmllib/c" \
         -I"${karamel.home}/krmllib/dist/minimal" \
         native-out/${src-module}.c \
-        -o native-out/lib${pname}.so
+        -o native-out/lib${pname}."$so_ext"
     '';
     installPhase = ''
       mkdir -p $out/lib $out/include
-      cp native-out/*.so $out/lib/ 2>/dev/null
+      cp native-out/*.so native-out/*.dylib $out/lib/ 2>/dev/null || true
       cp native-out/${src-module}.h $out/include/ 2>/dev/null
       if [ ! -f "$out/lib/lib${pname}.so" ] && [ ! -f "$out/lib/lib${pname}.dylib" ]; then
         echo "ERROR: no shared object produced" >&2

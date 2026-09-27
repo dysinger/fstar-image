@@ -1,4 +1,4 @@
-# hello — dev-loop build (F* verify + KaRaMeL extract + native link).
+# F* dev-loop build (verify + KaRaMeL extract + native link).
 #
 # Usage: nix develop, then `make check` / `make krml` / `make exe`.
 #
@@ -55,10 +55,19 @@ SRC_MODS := $(shell grep -h '^module ' src/*.fst 2>/dev/null | \
   grep -v '^module .* = ' | sed 's/^module //' | sort)
 KRML_MODS := $(SRC_MODS)
 
+# The source module name is auto-discovered from `module Foo` in src/*.fst,
+# so a module rename (file + `module` header) needs NO Makefile edit.  MODULE
+# is the (capitalized) module name; PNAME is the native executable basename.
+# PNAME is OVERRIDEABLE (the flake's <pname>-exe derivation passes it as the
+# project name); standalone `make exe` falls back to the lowercased module
+# name.
+MODULE := $(firstword $(SRC_MODS))
+PNAME  ?= $(shell printf '%s' '$(MODULE)' | tr 'A-Z' 'a-z')
+
 .PHONY: check krml exe clean
 
-# F* names its cache files `<source>.checked` (e.g. src/Hello.fst ->
-# Hello.fst.checked), so the stamp must use the .fst.checked suffix.  Using
+# F* names its cache files `<source>.checked` (e.g. src/Example.fst ->
+# Example.fst.checked), so the stamp must use the .fst.checked suffix.  Using
 # plain .checked here (as the original xeno/tls Makefile does) leaves `make
 # check` permanently out-of-date and re-verifying every run; this diverges
 # from xeno on purpose to make the advertised dev loop actually incremental.
@@ -96,16 +105,31 @@ $(foreach mod,$(KRML_MODS),$(eval $(call KRML_RULE,$(mod))))
 
 # ── Native executable ──────────────────────────────────────────────
 #
-# KaRaMeL emits C from the krmllib runtime + extracted modules but does NOT
-# emit a C `main()`.  The checked-in src/main.c driver supplies it: it calls
-# the extracted entry point Hello_main (the C form of Hello.main) and returns
-# its exit code.
+# KaRaMeL emits C from the krmllib runtime + extracted module but does NOT
+# emit a C `main()`.  The driver supplies it: a tiny generated main.c that
+# calls the extracted entry point <Module>_main and returns its exit code.
+# It is regenerated from the KaRaMeL-emitted <Module>.h header (which declares
+# the exact `<Module>_main` prototype), so a rename needs no hand-edited C
+# symbol.
 
-EXE_BIN := $(OUT)/hello
+EXE_BIN := $(OUT)/$(PNAME)
+
+# Generated driver, derived from the header.  KaRaMeL's C mangling is
+# deterministic: `Module.main` -> C symbol `Module_main` (see the
+# `int32_t Example_main(void);` prototype in the emitted <Module>.h).
+$(OUT)/main.c: $(addprefix $(OUT)/krml/,$(addsuffix .krml,$(subst .,_,$(KRML_MODS))))
+	@mkdir -p $(OUT)
+	@printf '%s\n' \
+	  "/* Generated from the KaRaMeL header. Entry symbol: $(MODULE)_main */" \
+	  "#include \"$(MODULE).h\"" \
+	  "" \
+	  "int main(void) {" \
+	  "  return (int)$(MODULE)_main();" \
+	  "}" > $@
 
 exe: $(EXE_BIN)
 
-$(EXE_BIN): $(addprefix $(OUT)/krml/,$(addsuffix .krml,$(subst .,_,$(KRML_MODS)))) src/main.c
+$(EXE_BIN): $(addprefix $(OUT)/krml/,$(addsuffix .krml,$(subst .,_,$(KRML_MODS)))) $(OUT)/main.c
 	@echo "=== EXE ($(CC)) ==="
 	@ok=1; \
 	  for d in "$(FSTAR_KRML)/krml" "$(OUT)/krml"; do \
@@ -124,7 +148,7 @@ $(EXE_BIN): $(addprefix $(OUT)/krml/,$(addsuffix .krml,$(subst .,_,$(KRML_MODS))
 	    -c $$cfile -o $${cfile%.c}.o; \
 	done
 	$(CC) $(CFLAGS) $(LDFLAGS) -std=c11 -I$(OUT)/krml $(KRM_INC) \
-	  -o $@ src/main.c \
+	  -o $@ $(OUT)/main.c \
 	  $(OUT)/krml/*.o \
 	  $(KRM_LIB_A)
 

@@ -1,7 +1,8 @@
-(** Hello — a minimal verified F* module that extracts to C (KaRaMeL) and
+(** Example — a minimal verified F* module that extracts to C (KaRaMeL) and
     runs natively or in WebAssembly.
 
-    The module demonstrates the full verification workflow end to end:
+    This is the scaffold module you replace with your own.  It demonstrates
+    the full verification workflow end to end:
 
       - a small library of total, verified byte operations;
       - lemmas proving algebraic properties of those operations at
@@ -12,16 +13,16 @@
         native binary and to a WebAssembly module driven by KaRaMeL's JS
         loader.
 
-    This is a *plain extractable* module (`module Hello`), NOT a Low* module
-    (`module Hello.Low`).  The `main` function uses F*'s `ST` effect
+    This is a *plain extractable* module (`module Example`), NOT a Low* module
+    (`module Example.Low`).  The `main` function uses F*'s `ST` effect
     (stateful but heap-free) simply to get an extractable, runnable entry
     point; it is not Low* code.  For genuine Low* (heap buffers, `Stack`
     effects) the convention is a `*.Low` suffix plus a two-layer spec/impl
     split.
 
-    @header Hello
+    @header Example
 *)
-module Hello
+module Example
 
 open FStar.UInt8
 open FStar.Int32

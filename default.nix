@@ -1,11 +1,13 @@
-# hello — minimal verified F* package.
+# Minimal verified F* package.
 #
 # Takes pkgs with fstar, karamel, fstar-checked in scope (from the nixpkgs
-# overlay in the top-level flake), plus the name of the single source module.
+# overlay in the top-level flake), plus the project name and the source module
+# name (both derived from the single `pname` binding in flake.nix).
 #
-# Returns { hello-checked, hello-krml }.
+# Returns { checked; krml; } — rename-agnostic keys.  The top-level flake
+# exposes them as packages.<pname>-checked / -krml.
 
-{ pkgs, module-name ? "Hello" }:
+{ pkgs, pname ? "fstar-example", module-name ? "Example" }:
 
 let
   inherit (pkgs) stdenv fstar karamel fstar-checked;
@@ -22,8 +24,8 @@ let
   # top-level flake rather than hardcoded.
   ordered-src-modules = [ module-name ];
 
-  hello-checked = stdenv.mkDerivation {
-    pname = "hello-checked";
+  checked = stdenv.mkDerivation {
+    pname = "${pname}-checked";
     version = "0.1.0";
     src = ./.;
     nativeBuildInputs = [ fstar ];
@@ -46,21 +48,21 @@ let
     installPhase = "true";
   };
 
-  hello-krml = stdenv.mkDerivation {
-    pname = "hello-krml";
+  krml = stdenv.mkDerivation {
+    pname = "${pname}-krml";
     version = "0.1.0";
     src = ./.;
     nativeBuildInputs = [ fstar ];
     buildPhase = ''
       mkdir -p $out
-      cp ${hello-checked}/*.checked $out/ 2>/dev/null || true
+      cp ${checked}/*.checked $out/ 2>/dev/null || true
       cp ${fstar-checked}/*.checked $out/ 2>/dev/null || true
 
       # Note: a multi-module package typically extracts only its `.Low` modules
       # (via `grep '\.Low'`).  This template's single module is a plain
-      # extractable `Hello` (not `Hello.Low`), so that filter would find zero
+      # extractable `Example` (not `Example.Low`), so that filter would find zero
       # modules and produce an empty artifact.  We therefore extract from
-      # ordered-src-modules (the same list hello-checked verifies).
+      # ordered-src-modules (the same list `checked` verifies).
       for mod in ${builtins.concatStringsSep " " ordered-src-modules}; do
         echo "=== Extracting $mod ==="
         ${fstar-exe} ${fstar-flags} \
@@ -76,5 +78,5 @@ let
   };
 in
 {
-  inherit hello-checked hello-krml;
+  inherit checked krml;
 }

@@ -18,7 +18,10 @@ else
   LDFLAGS = -Wl,--gc-sections
 endif
 
-OUT := out
+# Build output directory.  Defaults to `./out` for the dev loop; nix
+# derivations (default.nix) override it to `$out` so the Makefile writes
+# straight into the nix store output path.
+OUT ?= out
 
 FSTAR ?= fstar.exe
 KRML  ?= krml

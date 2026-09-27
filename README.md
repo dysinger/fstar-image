@@ -10,7 +10,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 nix flake init -t github:dysinger/fstar-nix-flake-template
 
 # 2. Name it: rename src/Example.fst -> src/<Name>.fst, its `module Example`
-#    header, and the literal names in flake.nix (see below).
+#    header, the pname in default.nix, and the literal names in flake.nix
+#    (see "Extending -> Rename the module").
 
 # 3. Build it.
 nix build
@@ -23,8 +24,9 @@ nix develop
 
 A minimal, self-contained [F*](https://www.fstar-lang.org/) project that
 demonstrates the full verified-to-runnable workflow: a single verified module
-is checked, extracted to C via KaRaMeL, and run as a **native executable** and
-a **WebAssembly module** — all driven by [Nix flakes](https://nixos.wiki/wiki/Flakes).
+is checked, extracted via KaRaMeL, and compiled to **C** (native executable +
+shared library), **Rust**, **OCaml**, and **WebAssembly** — all driven by
+[Nix flakes](https://nixos.wiki/wiki/Flakes).
 
 The build is three layers, one per environment:
 
@@ -81,27 +83,6 @@ connection to fetch `nixpkgs`, `fstar`, and `karamel`.
 (The native C driver `main.c` is **generated** by the `-exe` derivation from
 the KaRaMeL-emitted header — see "How the entry points work" below — so there
 is no checked-in `src/main.c` and no hand-edited `<Module>_main` symbol.)
-
-## Create a new project from this template
-
-```bash
-# 1. Initialize a new project (copies this repo's files into the current dir).
-nix flake init -t github:dysinger/fstar-nix-flake-template
-
-# 2. Rename the module (a real rename, not a config edit):
-#    - src/Example.fst -> src/<Name>.fst and its `module Example` header
-#    - the `pname = "fstar-example"` binding in default.nix
-#    - the literal flake attribute names in flake.nix
-#      (`packages.fstar-example-checked`, ..., `apps.default`)
-
-# 3. Build everything.
-nix build
-```
-
-The package name lives in `default.nix`'s `pname`; the flake re-exposes the
-package under literal attribute names that must match it.  A rename is honest:
-edit the module source, `default.nix`'s `pname`, and the flake attribute keys
-together.  There is no `nix flake init --name` flag and no rename magic.
 
 ## Targets
 
@@ -263,7 +244,8 @@ Vim) at it for hover docs, diagnostics, and completions.
   C entry symbol (`<Module>_main`) needs no hand-edit — the `Makefile` (and the
   `-exe` derivation) generate `main.c` from the KaRaMeL-emitted header.
   (Renaming the *project* — `pname` — is separate: edit `pname` in
-  `flake.nix`.)
+  `default.nix` and the literal flake attribute names in `flake.nix` to
+  match.)
 - **Add more modules** — list them (in dependency order, leaf modules first) in
   the `Makefile`'s `SRC_MODS` (the Makefile owns module order); a plain
   alphabetical `sort` would verify a dependent module before its leaf and
@@ -333,9 +315,9 @@ KaRaMeL's wasm backend *must* own the entire runtime, entry point included:
 
 - It exports the extracted `Example.main` as a wasm function literally named
   `main` (visible in the loader log as `Example exports ... main ...`) — this is
-  what the `-no-prefix Example` flag in `flake.nix` does: it strips the
-  `<Module>_` prefix so the export is `main` rather than `Example_main`, which
-  is the name `main.js` searches for.
+  what the `-no-prefix Example` flag in the `-wasm` derivation (in `default.nix`)
+  does: it strips the `<Module>_` prefix so the export is `main` rather than
+  `Example_main`, which is the name `main.js` searches for.
 - It generates a JS loader bundle (`main.js`, `loader.js`, `shell.js`,
   `browser.js`, `main.html`, `layouts.json`) that instantiates the module,
   wires up the imports (memory, `malloc`, etc.), finds the `main` export,

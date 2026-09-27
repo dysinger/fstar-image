@@ -80,11 +80,18 @@
                     echo "extract: $(ls $out/extract/ 2>/dev/null | wc -l) files"
                   '';
               in
-              { inherit fstar karamel fstar-checked fstar-krml; })
+              {
+                inherit fstar karamel fstar-checked fstar-krml;
+                # The OCaml 5.3 package set F* itself is built against
+                # (carries batteries/pprint/stdint/yojson/zarith, the deps
+                # fstar.lib's OCaml runtime requires for ocamlfind linking).
+                ocamlPackages = prev.ocaml-ng.ocamlPackages_5_3;
+              })
           ];
         };
 
         inherit (pkgs) stdenv fstar karamel fstar-checked fstar-krml;
+        inherit (pkgs) ocamlPackages;
 
         # The F* module name, threaded into downstream stages.  Changing it
         # must also update the Hello_* C symbols in src/main.c (which cannot
@@ -202,21 +209,54 @@
         # (the intermediate IR KaRaMeL consumes).  Each runs the same
         # verify-then-extract pipeline as hello-checked/hello-krml.
 
-        # OCaml source (`--codegen OCaml`).
-        packages.hello-ocaml = pkgs.stdenv.mkDerivation {
-          name = "hello-ocaml";
-          src = ./. ;
-          nativeBuildInputs = [ fstar ];
-          buildPhase = ''
-            mkdir -p $out
-            export ULIB="${fstar}/lib/fstar/ulib"
-            ${fstar}/bin/fstar.exe \
-              --no_default_includes --include $ULIB --include ./src \
-              --codegen OCaml --odir $out \
-              src/${hello-module}.fst || exit 1
-            ls -la $out
-          '';
-          installPhase = "true";
+        # OCaml source (`--codegen OCaml`), then compiled via
+        # `ocamlPackages.buildDunePackage` (dune, the canonical OCaml Nix build
+        # tool) against the fstar OCaml runtime (`fstar.lib`).
+        packages.hello-ocaml = let
+          # Extract Hello.ml + a minimal dune scaffold into a source tree that
+          # buildDunePackage can consume.  The fstar runtime (`fstar.lib`) is a
+          # findlib package living at ${fstar}/lib/fstar; it is exposed via
+          # OCAMLPATH in the build below.
+          hello-ocaml-src = pkgs.stdenv.mkDerivation {
+            name = "hello-ocaml-src";
+            src = ./. ;
+            nativeBuildInputs = [ fstar ];
+            buildPhase = ''
+              mkdir -p $out
+              export ULIB="${fstar}/lib/fstar/ulib"
+              ${fstar}/bin/fstar.exe \
+                --no_default_includes --include $ULIB --include ./src \
+                --codegen OCaml --odir $out \
+                src/${hello-module}.fst || exit 1
+              cat > $out/dune-project <<'DUNE_PROJECT'
+(lang dune 3.11)
+(name hello-ocaml)
+(package (name hello-ocaml))
+DUNE_PROJECT
+              cat > $out/dune <<'DUNE'
+(library
+ (name hello)
+ (public_name hello-ocaml)
+ (modules Hello)
+ (libraries fstar.lib))
+DUNE
+            '';
+            installPhase = "true";
+          };
+        in
+        ocamlPackages.buildDunePackage {
+          pname = "hello-ocaml";
+          version = "0.1.0";
+          src = hello-ocaml-src;
+          # Expose the fstar OCaml runtime (fstar.lib findlib package) plus the
+          # transitive deps fstar.lib's META declares: batteries pprint stdint
+          # yojson zarith ppx_deriving*.  All live in ocamlPackages (5.3).
+          propagatedBuildInputs = [ fstar ];
+          buildInputs = with ocamlPackages; [
+            batteries pprint stdint yojson zarith
+            ppx_deriving ppx_deriving_yojson
+          ];
+          OCAMLPATH = "${fstar}/lib";
         };
 
         # F# source (`--codegen FSharp`).
@@ -231,7 +271,6 @@
               --no_default_includes --include $ULIB --include ./src \
               --codegen FSharp --odir $out \
               src/${hello-module}.fst || exit 1
-            ls -la $out
           '';
           installPhase = "true";
         };
@@ -242,12 +281,12 @@
         # (.rs), or `wasm` (.wasm).  These consume the pre-built hello-krml
         # output (never re-extract from source).
 
-        # Native C library (`.c` + `.h`).  Distinct from hello-exe (links a main
-        # driver); this is the compilable C surface.
+        # Native C library, compiled to a shared object (`.so`/`.dylib`).
+        # Distinct from hello-exe (which links a main driver).
         packages.hello-native = pkgs.stdenv.mkDerivation {
           name = "hello-native";
           src = ./. ;
-          nativeBuildInputs = [ fstar karamel ];
+          nativeBuildInputs = [ fstar karamel pkgs.stdenv.cc ];
           buildPhase = ''
             mkdir -p native-out
             export KRML_HOME="${karamel.home}"
@@ -255,45 +294,55 @@
               -skip-compilation \
               -tmpdir native-out \
               ${hello-krml}/${hello-module}.krml
+            cc -shared -fPIC \
+              -I"${karamel.home}/include" \
+              -I"${karamel.home}/krmllib/c" \
+              -I"${karamel.home}/krmllib/dist/minimal" \
+              native-out/${hello-module}.c \
+              -o native-out/libhello.so
           '';
           installPhase = ''
-            mkdir -p $out
-            cp native-out/* $out/ 2>/dev/null
-            if [ ! -f "$out/${hello-module}.h" ]; then
-              echo "ERROR: no .h produced (expected ${hello-module}.h)" >&2
+            mkdir -p $out/lib $out/include
+            cp native-out/*.so $out/lib/ 2>/dev/null
+            cp native-out/${hello-module}.h $out/include/ 2>/dev/null
+            if [ ! -f "$out/lib/libhello.so" ] && [ ! -f "$out/lib/libhello.dylib" ]; then
+              echo "ERROR: no shared object produced" >&2
               exit 1
             fi
-            echo "native: $(ls $out/*.c $out/*.h 2>/dev/null | wc -l) .c/.h files"
           '';
         };
 
-        # Rust source (`krml -backend rust`).  `-minimal` drops the KaRaMeL C
-        # runtime (which the Rust backend cannot translate — see C._zero_for_deref)
-        # and `-bundle Hello=\*` keeps only reachable definitions, producing a
-        # single idiomatic .rs file (no runtime shims).
-        packages.hello-rust = pkgs.stdenv.mkDerivation {
+        # Rust source (`krml -backend rust`), compiled to an rlib via rustc.
+        # `-minimal` + `-bundle Hello=\*` drop the untranslatable KaRaMeL C
+        # runtime and emit a single reachable-only .rs.
+        packages.hello-rust = let
+          hello-rust-src = pkgs.stdenv.mkDerivation {
+            name = "hello-rust-src";
+            src = ./. ;
+            nativeBuildInputs = [ fstar karamel ];
+            buildPhase = ''
+              mkdir -p $out
+              export KRML_HOME="${karamel.home}"
+              ${karamel}/bin/krml \
+                -minimal \
+                -bundle ${hello-module}=\* \
+                -tmpdir $out \
+                -backend rust \
+                ${hello-krml}/${hello-module}.krml
+            '';
+            installPhase = "true";
+          };
+        in
+        pkgs.stdenv.mkDerivation {
           name = "hello-rust";
-          src = ./. ;
-          nativeBuildInputs = [ fstar karamel ];
+          src = hello-rust-src;
+          nativeBuildInputs = [ pkgs.rustc ];
           buildPhase = ''
-            mkdir -p rust-out
-            export KRML_HOME="${karamel.home}"
-            ${karamel}/bin/krml \
-              -minimal \
-              -bundle ${hello-module}=\* \
-              -tmpdir rust-out \
-              -backend rust \
-              ${hello-krml}/${hello-module}.krml
+            rustc --crate-type lib hello.rs --crate-name hello -o libhello.rlib
           '';
           installPhase = ''
-            mkdir -p $out
-            cp rust-out/* $out/ 2>/dev/null
-            if [ ! -f "$out/hello.rs" ]; then
-              echo "ERROR: no .rs produced (expected hello.rs)" >&2
-              ls -la rust-out/ >&2 || true
-              exit 1
-            fi
-            echo "rust: $(ls $out/*.rs 2>/dev/null | wc -l) .rs file(s)"
+            mkdir -p $out/lib
+            cp libhello.rlib $out/lib/
           '';
         };
 

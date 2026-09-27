@@ -9,8 +9,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # 1. Initialize a new F* project (copies the template into the current dir).
 nix flake init -t github:dysinger/fstar-nix-flake-template
 
-# 2. Name it.  Open flake.nix and change the ONE line `pname = "fstar-example";`
-#    to your project name, e.g. "i18n".
+# 2. Name it: rename src/Example.fst -> src/<Name>.fst, its `module Example`
+#    header, and the literal names in flake.nix (see below).
 
 # 3. Build it.
 nix build
@@ -19,10 +19,6 @@ nix build
 nix develop
 ```
 
-Done.  The single `pname` edit renames every output automatically — see
-[Create a new project](#create-a-project-from-this-template) below for the
-full table and the optional module-rename step.
-
 ---
 
 A minimal, self-contained [F*](https://www.fstar-lang.org/) project that
@@ -30,10 +26,21 @@ demonstrates the full verified-to-runnable workflow: a single verified module
 is checked, extracted to C via KaRaMeL, and run as a **native executable** and
 a **WebAssembly module** — all driven by [Nix flakes](https://nixos.wiki/wiki/Flakes).
 
-The build uses the standard F* + KaRaMeL flake pattern: a nixpkgs overlay
-providing `fstar`, `karamel`, `fstar-checked`, and `fstar-krml`; a `default.nix`
-returning `{ fstar-example-checked; fstar-example-krml; }`; and a `Makefile` with `check` / `krml`
-/ `exe` targets.
+The build is three layers, one per environment:
+
+| File | Responsibility | Works without flakes? |
+|------|----------------|-----------------------|
+| `flake.nix` | inputs/outputs + `devShell` only | no (needs flakes) |
+| `default.nix` | builds the targets (all of them) | yes (`nix-build` / `import`) |
+| `Makefile` | the shell-script build (module order) | yes (plain `fstar`/`karamel` on PATH) |
+
+The nixpkgs overlay (in `flake.nix`) builds `fstar`, `karamel`,
+`fstar-checked`, and `fstar-krml` from the pinned forks; the flake passes them
+to `default.nix` by named argument.  `default.nix` delegates verification and
+extraction to the `Makefile` (`make check` / `make krml` / `make exe`), which
+owns the module list and its dependency order.  The editor LSP
+(`fstar.exe --lsp`) is a dev-loop aid only — `nix build` is the verification
+gate.
 
 ## What the template demonstrates
 
@@ -64,51 +71,37 @@ connection to fetch `nixpkgs`, `fstar`, and `karamel`.
 
 ```
 .
-├── flake.nix          # Nix build: verify / extract / exe / wasm / devShell
-├── default.nix        # Package: returns { checked; krml; }
-├── Makefile           # Dev-loop: make check / make krml / make exe
+├── flake.nix          # inputs/outputs + devShell (flakes only)
+├── default.nix        # builds every target (checked/krml/exe/native/rust/ocaml/wasm)
+├── Makefile           # the no-nix shell build (owns module order)
 └── src/
     └── Example.fst    # The verified F* example module (extracts to C / OCaml / Rust / ...)
 ```
 
-(The native C driver `main.c` is **generated** by the Makefile from the
-KaRaMeL-emitted header — see "How the entry points work" below — so there is no
-checked-in `src/main.c` and no hand-edited `<Module>_main` symbol.)
+(The native C driver `main.c` is **generated** by the `-exe` derivation from
+the KaRaMeL-emitted header — see "How the entry points work" below — so there
+is no checked-in `src/main.c` and no hand-edited `<Module>_main` symbol.)
 
 ## Create a new project from this template
-
-One, two, three:
 
 ```bash
 # 1. Initialize a new project (copies this repo's files into the current dir).
 nix flake init -t github:dysinger/fstar-nix-flake-template
 
-# 2. Set your project name.  Open flake.nix and change ONE line:
-#
-#        pname = "fstar-example";
-#
-#    to e.g. "i18n".  That single binding drives every output below.
+# 2. Rename the module (a real rename, not a config edit):
+#    - src/Example.fst -> src/<Name>.fst and its `module Example` header
+#    - the `pname = "fstar-example"` binding in default.nix
+#    - the literal flake attribute names in flake.nix
+#      (`packages.fstar-example-checked`, ..., `apps.default`)
 
 # 3. Build everything.
 nix build
 ```
 
-That's it.  Everything else follows from `pname` automatically:
-
-| `pname = "i18n"` gives you | |
-|---|---|
-| flake attributes | `.#i18n-checked`, `.#i18n-exe`, `.#i18n-native`, ... |
-| native executable | `bin/i18n` |
-| C library | `libi18n.so` + `Example.h` |
-| Rust library | `libi18n.rlib` |
-| OCaml package | `i18n.cmxa` + `i18n.cmi` |
-| WebAssembly | `Example.wasm` + JS loader (`node main.js`) |
-
-> **Why `Example`?**  The verified F* module is a generic placeholder named
-> `Example` (`src/Example.fst`).  It is deliberately **not** tied to `pname`,
-> so renaming the project is a single edit.  Rename the module too only if you
-> want to (see "Extending → Rename the module").  There is no
-> `nix flake init --name` flag — the single `pname` edit is the whole rename.
+The package name lives in `default.nix`'s `pname`; the flake re-exposes the
+package under literal attribute names that must match it.  A rename is honest:
+edit the module source, `default.nix`'s `pname`, and the flake attribute keys
+together.  There is no `nix flake init --name` flag and no rename magic.
 
 ## Targets
 
@@ -183,10 +176,11 @@ echo $?   # -> 0
 ```
 
 The executable links the verified module through a small C driver that the
-`Makefile` **generates** from the KaRaMeL-emitted `Example.h` header (which
-declares the exact `Example_main` prototype).  The driver calls `Example_main` (the
-extracted form of `Example.main`, which exercises the verified operations) and
-forwards its exit code (`0`) to the process.  It performs no I/O.
+`-exe` derivation **generates** from the KaRaMeL-emitted `Example.h` header
+(which declares the exact `Example_main` prototype).  The driver calls
+`Example_main` (the extracted form of `Example.main`, which exercises the
+verified operations) and forwards its exit code (`0`) to the process.  It
+performs no I/O.
 
 ## Run the WebAssembly module
 
@@ -232,11 +226,17 @@ make exe           # emit C, compile, link -> out/fstar-example
 make clean
 ```
 
-The devShell exports the environment the `Makefile` needs:
+For fast interactive checking use the editor LSP (`fstar.exe --lsp`, see
+below) — the LSP is a dev-loop aid, not a second build system.  The `nix build
+.#fstar-example-checked` run (with a Z3 resource limit) is the authoritative
+gate.
+
+The `nix develop` devShell exports the environment the `Makefile` (and the
+`-exe`/`-native` derivations and a manual `fstar.exe`/`krml` invocation) need:
 
 | Variable | Purpose |
 |----------|---------|
-| `FSTAR_KRML` | krmllib runtime `.krml` (for the `make exe` link) |
+| `FSTAR_KRML` | krmllib runtime `.krml` (for the native C link) |
 | `FSTAR_CHECKED` | pre-verified stdlib `.checked` cache |
 | `KRML_HOME` | KaRaMeL home (krmllib, include headers) |
 | `KRM_LIB` | krmllib directory |
@@ -256,18 +256,18 @@ Vim) at it for hover docs, diagnostics, and completions.
 - **Edit the logic** — modify `src/Example.fst` with your own verified functions,
   lemmas, and `main`.
 - **Rename the module** (optional) — the verified module is a generic
-  placeholder named `Example`.  To rename it, do three things together:
-  rename `src/Example.fst` → `src/<Mod>.fst`, change its `module Example` header
-  → `module <Mod>`, and change the `module-name = "Example";` binding in
-  `flake.nix`.  The C entry symbol (`<Module>_main`) needs no hand-edit — the
-  `Makefile` generates `main.c` from the KaRaMeL-emitted header.  (Renaming the
-  *project* — `pname` — is separate and does NOT require renaming this module.)
+  placeholder named `Example`.  To rename it, do two things together:
+  rename `src/Example.fst` → `src/<Mod>.fst` and change its `module Example`
+  header → `module <Mod>`.  The `Makefile` and `default.nix` discover the
+  module name from the source tree, so no nix argument needs editing.  The
+  C entry symbol (`<Module>_main`) needs no hand-edit — the `Makefile` (and the
+  `-exe` derivation) generate `main.c` from the KaRaMeL-emitted header.
+  (Renaming the *project* — `pname` — is separate: edit `pname` in
+  `flake.nix`.)
 - **Add more modules** — list them (in dependency order, leaf modules first) in
-  `ordered-src-modules` in `default.nix`.  The `Makefile` auto-discovers modules
-  from `src/*.fst`; for a multi-module package you should also override
-  `SRC_MODS` in the `Makefile` with the same explicit ordered list, so the dev
-  loop verifies leaf-first (an alphabetical `sort` would verify a dependent
-  module before its prerequisite and trigger F* Warning 247).
+  the `Makefile`'s `SRC_MODS` (the Makefile owns module order); a plain
+  alphabetical `sort` would verify a dependent module before its leaf and
+  trigger F* Warning 247.
 - **Ship a library instead of an exe** — drop the `make exe` target and the
   `${pname}-exe` derivation; the `${pname}-krml` output is the library's
   extracted `.krml`/C.  When the package has `.Low` modules, `make krml` (and
@@ -296,7 +296,7 @@ supplies the surrounding runtime** that calls it and hands back the exit code.
 
 | Target | Who supplies the entry point | What runs it |
 |--------|------------------------------|--------------|
-| `fstar-example-exe` (`make exe`) | generated `main.c` (from `Example.h`) | The OS / libc (`_start` → `main`) |
+| `fstar-example-exe` | generated `main.c` (from `Example.h`) | The OS / libc (`_start` → `main`) |
 | `fstar-example-wasm` | KaRaMeL (exports a function named `main`) | The generated JS loader (`main.js`) |
 
 ### Why the native (POSIX) target needs `main.c`
@@ -313,8 +313,8 @@ are two reasons:
 On a real OS the C toolchain already provides the runtime entry point
 (`_start` → `__libc_start_main` → `main`), so KaRaMeL's job is only to produce
 portable C; the boundary is "KaRaMeL gives you the library, the platform gives
-you `main`."  The `Makefile` generates that two-line bridge for this template
-(from the `<Module>_main` prototype in the emitted header): it calls
+you `main`."  The `-exe` derivation generates that two-line bridge for this
+template (from the `<Module>_main` prototype in the emitted header): it calls
 `Example_main()` and forwards its exit code.
 
 ```c

@@ -195,6 +195,108 @@
           installPhase = "true";
         };
 
+        # ── F* source extraction backends ───────────────────────────────
+        #
+        # `fstar.exe --codegen <OCaml|FSharp|krml>` extracts the module to a
+        # source file in the target language: OCaml → .ml, F# → .fs, krml → .krml
+        # (the intermediate IR KaRaMeL consumes).  Each runs the same
+        # verify-then-extract pipeline as hello-checked/hello-krml.
+
+        # OCaml source (`--codegen OCaml`).
+        packages.hello-ocaml = pkgs.stdenv.mkDerivation {
+          name = "hello-ocaml";
+          src = ./. ;
+          nativeBuildInputs = [ fstar ];
+          buildPhase = ''
+            mkdir -p $out
+            export ULIB="${fstar}/lib/fstar/ulib"
+            ${fstar}/bin/fstar.exe \
+              --no_default_includes --include $ULIB --include ./src \
+              --codegen OCaml --odir $out \
+              src/${hello-module}.fst || exit 1
+            ls -la $out
+          '';
+          installPhase = "true";
+        };
+
+        # F# source (`--codegen FSharp`).
+        packages.hello-fsharp = pkgs.stdenv.mkDerivation {
+          name = "hello-fsharp";
+          src = ./. ;
+          nativeBuildInputs = [ fstar ];
+          buildPhase = ''
+            mkdir -p $out
+            export ULIB="${fstar}/lib/fstar/ulib"
+            ${fstar}/bin/fstar.exe \
+              --no_default_includes --include $ULIB --include ./src \
+              --codegen FSharp --odir $out \
+              src/${hello-module}.fst || exit 1
+            ls -la $out
+          '';
+          installPhase = "true";
+        };
+
+        # ── KaRaMeL C/Rust backends ────────────────────────────────────
+        #
+        # KaRaMeL `-backend` emits from the extracted .krml: `c` (.c/.h), `rust`
+        # (.rs), or `wasm` (.wasm).  These consume the pre-built hello-krml
+        # output (never re-extract from source).
+
+        # Native C library (`.c` + `.h`).  Distinct from hello-exe (links a main
+        # driver); this is the compilable C surface.
+        packages.hello-native = pkgs.stdenv.mkDerivation {
+          name = "hello-native";
+          src = ./. ;
+          nativeBuildInputs = [ fstar karamel ];
+          buildPhase = ''
+            mkdir -p native-out
+            export KRML_HOME="${karamel.home}"
+            ${karamel}/bin/krml \
+              -skip-compilation \
+              -tmpdir native-out \
+              ${hello-krml}/${hello-module}.krml
+          '';
+          installPhase = ''
+            mkdir -p $out
+            cp native-out/* $out/ 2>/dev/null
+            if [ ! -f "$out/${hello-module}.h" ]; then
+              echo "ERROR: no .h produced (expected ${hello-module}.h)" >&2
+              exit 1
+            fi
+            echo "native: $(ls $out/*.c $out/*.h 2>/dev/null | wc -l) .c/.h files"
+          '';
+        };
+
+        # Rust source (`krml -backend rust`).  `-minimal` drops the KaRaMeL C
+        # runtime (which the Rust backend cannot translate — see C._zero_for_deref)
+        # and `-bundle Hello=\*` keeps only reachable definitions, producing a
+        # single idiomatic .rs file (no runtime shims).
+        packages.hello-rust = pkgs.stdenv.mkDerivation {
+          name = "hello-rust";
+          src = ./. ;
+          nativeBuildInputs = [ fstar karamel ];
+          buildPhase = ''
+            mkdir -p rust-out
+            export KRML_HOME="${karamel.home}"
+            ${karamel}/bin/krml \
+              -minimal \
+              -bundle ${hello-module}=\* \
+              -tmpdir rust-out \
+              -backend rust \
+              ${hello-krml}/${hello-module}.krml
+          '';
+          installPhase = ''
+            mkdir -p $out
+            cp rust-out/* $out/ 2>/dev/null
+            if [ ! -f "$out/hello.rs" ]; then
+              echo "ERROR: no .rs produced (expected hello.rs)" >&2
+              ls -la rust-out/ >&2 || true
+              exit 1
+            fi
+            echo "rust: $(ls $out/*.rs 2>/dev/null | wc -l) .rs file(s)"
+          '';
+        };
+
         apps = {
           default = flake-utils.lib.mkApp { drv = self.packages.${system}.hello-exe; };
         };
@@ -222,14 +324,16 @@
       # template".
       templates.default = {
         path = ./.;
-        description = "Minimal verified F* project (Hello World) that builds to a native exe and WebAssembly";
+        description = "Minimal verified F* project: extracts to C, Rust, OCaml, F#, and WebAssembly";
         welcomeText = ''
           # F* verified project template
 
-          A minimal, self-contained F* module verified, extracted via KaRaMeL,
-          and runnable as a native executable and a WebAssembly module.
+          A minimal, self-contained F* module verified and extracted to every
+          supported target: C (native + exe), Rust, OCaml, F#, and WebAssembly.
 
-          - Build everything:  nix build .#hello-checked .#hello-krml .#hello-exe .#hello-wasm .#hello-fsdoc
+          - Build everything:  nix build \
+              .#hello-checked .#hello-krml .#hello-exe .#hello-native \
+              .#hello-rust .#hello-ocaml .#hello-fsharp .#hello-wasm .#hello-fsdoc
           - Dev loop:          nix develop && make check && make exe
           - Run the native exe: nix build .#hello-exe && ./result/bin/hello
           - Run the wasm:      nix build .#hello-wasm && cd result && node main.js

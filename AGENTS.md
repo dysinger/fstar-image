@@ -84,6 +84,25 @@ are compiler-plugin/extension-building modes, not output languages.)
 - The `hello-wasm` derivation is a KaRaMeL-native-backend invocation, not a
   `make` target (there is no Makefile wasm step to delegate to; the native link
   is the only Makefile step). This is intentional and documented in flake.nix.
+- **"Figure out F* → F#" — NEXT SESSION.** `hello-fsharp` currently emits
+  source-only `Hello.fs` (`fstar.exe --codegen FSharp`), then stops. The
+  extracted output uses `#light "off"` verbose syntax and references
+  `FStar_UInt8` / `FStar_Int32` / `Prims` / `Stdint.Int32`. Known blockers to
+  compiling it:
+  1. **No F# runtime**: F* ships no `.fs`/`.fsx`/`.fsproj`/`.dll` — only the
+     OCaml runtime. The `FStar_UInt8`/`Prims`/`Stdint` symbols have no backing
+     assembly to link against. There is nothing to `dotnet build` yet.
+  2. **Fantomas cannot parse it** (tried): `fantomas Hello.fs` fails with
+     "Could not parse file" — Fantomas targets `#light` (idiomatic) F#, not
+     F*'s `#light "off"` verbose output.
+  To make `hello-fsharp` a real compile target next session, one of:
+  - find/produce an F#-equivalent of the OCaml `fstar.lib` runtime (`.fs`
+    sources for `Prims`/`FStar_UInt8`/`FStar_Int32`/`Stdint`), then a
+    `dotnet`/`.fsproj` build; or
+  - keep it source-only and document that (current state), and drop the
+    "compile" framing for F# specifically.
+  The OCaml/C/Rust targets are already real compile targets (see Targets below);
+  F# is the only remaining source-only extraction backend.
 
 ## Definition of done
 

@@ -72,10 +72,10 @@ initializing, rename `Hello.fst` (see the "Rename the module" bullet under
 | `.#hello-checked` | F\* verification (`Hello.fst.checked` + stdlib `.checked` cache) | no |
 | `.#hello-krml` | KaRaMeL extraction (`Hello.krml` — intermediate IR) | no |
 | `.#hello-exe` | Native executable (`bin/hello`) | **yes** |
-| `.#hello-native` | Native C library (`Hello.c` + `Hello.h`) | no |
-| `.#hello-rust` | Rust source (`hello.rs`) | compile (lib) |
-| `.#hello-ocaml` | OCaml source (`Hello.ml`) | compile |
-| `.#hello-fsharp` | F# source (`Hello.fs`) | compile |
+| `.#hello-native` | Native C library (`libhello.so` + `Hello.h`) | no |
+| `.#hello-rust` | Rust library (`libhello.rlib`) | no |
+| `.#hello-ocaml` | OCaml findlib package (`hello.cmxa` + `hello.cmi`) | no |
+| `.#hello-fsharp` | F# source (`Hello.fs`) | no |
 | `.#hello-wasm` | WebAssembly module + JS loader bundle | **yes** |
 | `.#hello-fsdoc` | `fsdoc` comments → Markdown | no |
 
@@ -85,12 +85,12 @@ Every supported F* extraction target has a flake attribute:
 
 | System | Backend | Attribute | Output |
 |--------|---------|-----------|--------|
-| F* `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `.ml` |
+| F* `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `hello.cmxa` (findlib pkg) |
 | F* `fstar.exe --codegen` | `FSharp` | `.#hello-fsharp` | `.fs` |
 | F* `fstar.exe --codegen` | `krml` | `.#hello-krml` | `.krml` (IR) |
-| KaRaMeL `krml -backend` | `c` | `.#hello-native` | `.c`/`.h` |
-| KaRaMeL `krml -backend` | `rust` | `.#hello-rust` | `.rs` |
-| KaRaMeL `krml -backend` | `wasm` | `.#hello-wasm` | `.wasm` |
+| KaRaMeL `krml -backend` | `c` | `.#hello-native` | `libhello.so` + `.h` |
+| KaRaMeL `krml -backend` | `rust` | `.#hello-rust` | `libhello.rlib` |
+| KaRaMeL `krml -backend` | `wasm` | `.#hello-wasm` | `Hello.wasm` |
 
 ## Build everything
 

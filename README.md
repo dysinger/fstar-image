@@ -1,5 +1,24 @@
 # F* Project Template
 
+## Getting started
+
+```bash
+# 1. Initialize a new F* project (copies the template into the current dir).
+nix flake init -t github:dysinger/fstar-nix-flake-template
+
+# 2. Name it.  Open flake.nix and change the ONE line `pname = "fstar-example";`
+#    to your project name, e.g. "i18n".
+
+# 3. Build it.
+nix build
+```
+
+Done.  The single `pname` edit renames every output automatically — see
+[Create a new project](#create-a-project-from-this-template) below for the
+full table and the optional module-rename step.
+
+---
+
 A minimal, self-contained [F*](https://www.fstar-lang.org/) project that
 demonstrates the full verified-to-runnable workflow: a single verified module
 is checked, extracted to C via KaRaMeL, and run as a **native executable** and
@@ -7,12 +26,12 @@ a **WebAssembly module** — all driven by [Nix flakes](https://nixos.wiki/wiki/
 
 The build uses the standard F* + KaRaMeL flake pattern: a nixpkgs overlay
 providing `fstar`, `karamel`, `fstar-checked`, and `fstar-krml`; a `default.nix`
-returning `{ hello-checked; hello-krml; }`; and a `Makefile` with `check` / `krml`
+returning `{ fstar-example-checked; fstar-example-krml; }`; and a `Makefile` with `check` / `krml`
 / `exe` targets.
 
 ## What the template demonstrates
 
-`src/Hello.fst` is a small verified module with three layers:
+`src/Example.fst` is a small verified module with three layers:
 
 | Layer | Contents | Effect | Purpose |
 |-------|----------|--------|---------|
@@ -40,91 +59,143 @@ connection to fetch `nixpkgs`, `fstar`, and `karamel`.
 ```
 .
 ├── flake.nix          # Nix build: verify / extract / exe / wasm / fsdoc / devShell
-├── default.nix        # Package: returns { hello-checked; hello-krml; }
+├── default.nix        # Package: returns { checked; krml; }
 ├── Makefile           # Dev-loop: make check / make krml / make exe
 ├── src/
-│   ├── Hello.fst      # The verified F* module (extracts to C)
-│   └── main.c         # Native C driver (calls the extracted entry point)
+│   └── Example.fst    # The verified F* example module (extracts to C / OCaml / Rust / ...)
 └── scripts/
     └── fsdoc.py       # fsdoc comment extractor
 ```
 
-## Using as a template
+(The native C driver `main.c` is **generated** by the Makefile from the
+KaRaMeL-emitted header — see "How the entry points work" below — so there is no
+checked-in `src/main.c` and no hand-edited `<Module>_main` symbol.)
 
-This flake is a real Nix flake template.  Start a new project from it with:
+## Create a new project from this template
+
+One, two, three:
 
 ```bash
-nix flake init -t github:<you>/<this-repo>     # or a local path: -t /path/to/fstar-template
-nix develop      # verify/extract/dev-loop environment
-nix build        # build all targets
+# 1. Initialize a new project (copies this repo's files into the current dir).
+nix flake init -t github:dysinger/fstar-nix-flake-template
+
+# 2. Set your project name.  Open flake.nix and change ONE line:
+#
+#        pname = "fstar-example";
+#
+#    to e.g. "i18n".  That single binding drives every output below.
+
+# 3. Build everything.
+nix build
 ```
 
-The `templates.default` output points at the repository root, so `nix flake
-init` copies the whole layout (flake.nix, default.nix, Makefile, src/, scripts/)
-and its `welcomeText` prints the pointer to the build/run commands.  After
-initializing, rename `Hello.fst` (see the "Rename the module" bullet under
-[Extending](#extending)) and replace this README's front matter with your own.
+That's it.  Everything else follows from `pname` automatically:
+
+| `pname = "i18n"` gives you | |
+|---|---|
+| flake attributes | `.#i18n-checked`, `.#i18n-exe`, `.#i18n-native`, ... |
+| native executable | `bin/i18n` |
+| C library | `libi18n.so` + `Example.h` |
+| Rust library | `libi18n.rlib` |
+| OCaml package | `i18n.cmxa` + `i18n.cmi` |
+| WebAssembly | `Example.wasm` + JS loader (`node main.js`) |
+
+> **Why `Example`?**  The verified F* module is a generic placeholder named
+> `Example` (`src/Example.fst`).  It is deliberately **not** tied to `pname`,
+> so renaming the project is a single edit.  Rename the module too only if you
+> want to (see "Extending → Rename the module").  There is no
+> `nix flake init --name` flag — the single `pname` edit is the whole rename.
 
 ## Targets
 
 | Flake attribute | What it produces | Runnable? |
 |-----------------|------------------|-----------|
-| `.#hello-checked` | F\* verification (`Hello.fst.checked` + stdlib `.checked` cache) | no |
-| `.#hello-krml` | KaRaMeL extraction (`Hello.krml` — intermediate IR) | no |
-| `.#hello-exe` | Native executable (`bin/hello`) | **yes** |
-| `.#hello-native` | Native C library (`libhello.so` + `Hello.h`) | no |
-| `.#hello-rust` | Rust library (`libhello.rlib`) | no |
-| `.#hello-ocaml` | OCaml findlib package (`hello.cmxa` + `hello.cmi`) | no |
-| `.#hello-fsharp` | F# source (`Hello.fs`) | no |
-| `.#hello-wasm` | WebAssembly module + JS loader bundle | **yes** |
-| `.#hello-fsdoc` | `fsdoc` comments → Markdown | no |
+| `.#fstar-example-checked` | F\* verification (`Example.fst.checked` + stdlib `.checked` cache) | no |
+| `.#fstar-example-krml` | KaRaMeL extraction (`Example.krml` — intermediate IR) | no |
+| `.#fstar-example-exe` | Native executable (`bin/fstar-example`) | **yes** |
+| `.#fstar-example-native` | Native C library (`libfstar-example.so` + `Example.h`) | no |
+| `.#fstar-example-rust` | Rust library (`libfstar-example.rlib`) | no |
+| `.#fstar-example-ocaml` | OCaml findlib package (`fstar-example.cmxa` + `fstar-example.cmi`) | no |
+| `.#fstar-example-wasm` | WebAssembly module + JS loader bundle | **yes** |
+| `.#fstar-example-fsdoc` | `fsdoc` comments → Markdown | no |
 
-`nix build` with no argument builds the default package (`hello-krml`).
+`nix build` with no argument builds the default package (`fstar-example-krml`).
 
 Every supported F* extraction target has a flake attribute:
 
 | System | Backend | Attribute | Output |
 |--------|---------|-----------|--------|
-| F* `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `hello.cmxa` (findlib pkg) |
-| F* `fstar.exe --codegen` | `FSharp` | `.#hello-fsharp` | `.fs` |
-| F* `fstar.exe --codegen` | `krml` | `.#hello-krml` | `.krml` (IR) |
-| KaRaMeL `krml -backend` | `c` | `.#hello-native` | `libhello.so` + `.h` |
-| KaRaMeL `krml -backend` | `rust` | `.#hello-rust` | `libhello.rlib` |
-| KaRaMeL `krml -backend` | `wasm` | `.#hello-wasm` | `Hello.wasm` |
+| F* `fstar.exe --codegen` | `OCaml` | `.#fstar-example-ocaml` | `fstar-example.cmxa` (findlib pkg) |
+| F* `fstar.exe --codegen` | `krml` | `.#fstar-example-krml` | `.krml` (IR) |
+| KaRaMeL `krml -backend` | `c` | `.#fstar-example-native` | `libfstar-example.so` + `.h` |
+| KaRaMeL `krml -backend` | `rust` | `.#fstar-example-rust` | `libfstar-example.rlib` |
+| KaRaMeL `krml -backend` | `wasm` | `.#fstar-example-wasm` | `Example.wasm` |
+
+### Why there is no F# target
+
+`fstar.exe --codegen FSharp` exists and emits a `.fs` file, but this template
+**deliberately omits it**.  F*'s own repository marks the F# path as
+unmaintained:
+
+- its `fsharp/README` says the F# runtime is *"currently not tested by anything
+  in this repository"*; and
+- its `examples/hello/README.md` says *"None of this worked for me. I am
+  disabling this directory for now."*
+
+Beyond that, the backend is effectively unbuildable with the current
+`fstar`/`karamel` inputs:
+
+1. **No packaged runtime.**  F* ships an F# runtime only as *source* under
+   `fsharp/base/` (`Prims.fs`, `FStar_UInt8.fs`, `FStar_Int32.fs`, ...); that
+   directory is not installed into the `fstar` derivation, so the symbols the
+   extracted `.fs` references (`FStar_UInt8`, `FStar_Int32`, `Prims`) have no
+   `.dll` to link against.
+2. **Codegen/literal mismatch.**  `string_of_mlconstant` in
+   `FStarC.Extraction.ML.Code.fst` emits bare `int` literals (e.g. `0x00`) for
+   `Int8` constants, while the unshipped `FStar_UInt8.fs` realizes `uint8` as
+   `Prims.int` (= `bigint`).  The extracted output does not typecheck against
+   its own runtime.
+3. **Deprecated syntax.**  The codegen emits `#light "off"` (deprecated since
+   F# 2.0), which requires `--mlcompatibility`; even then the above mismatch
+   remains.
+
+If upstream F* later ships a supported F# backend + runtime, add a
+`fstar-example-fsharp` derivation mirroring the `fstar-example-ocaml` shape (extract `--codegen
+FSharp`, then `dotnet build` against the runtime).  Until then, no F# target.
 
 ## Build everything
 
 ```bash
 nix build \
-  .#hello-checked .#hello-krml .#hello-exe .#hello-native \
-  .#hello-rust .#hello-ocaml .#hello-fsharp .#hello-wasm .#hello-fsdoc
+  .#fstar-example-checked .#fstar-example-krml .#fstar-example-exe .#fstar-example-native \
+  .#fstar-example-rust .#fstar-example-ocaml .#fstar-example-wasm .#fstar-example-fsdoc
 ```
 
 ## Run the native executable
 
 ```bash
-nix build .#hello-exe
-./result/bin/hello
+nix build .#fstar-example-exe
+./result/bin/fstar-example
 echo $?   # -> 0
 ```
 
-The executable links the verified module through a checked-in two-line C
-driver (`src/main.c`), which KaRaMeL does not generate on its own.  The driver
-calls `Hello_main` (the extracted form of `Hello.main`, which exercises the
-verified operations) and forwards its exit code (`0`) to the process.  It
-performs no I/O.
+The executable links the verified module through a small C driver that the
+`Makefile` **generates** from the KaRaMeL-emitted `Example.h` header (which
+declares the exact `Example_main` prototype).  The driver calls `Example_main` (the
+extracted form of `Example.main`, which exercises the verified operations) and
+forwards its exit code (`0`) to the process.  It performs no I/O.
 
 ## Run the WebAssembly module
 
 ```bash
-nix build .#hello-wasm
+nix build .#fstar-example-wasm
 cd result
 node main.js
-# ... main found in module Hello
+# ... main found in module Example
 # ... done running main
 ```
 
-The wasm backend emits `Hello.wasm` (exporting the verified `add`, `xor`, and
+The wasm backend emits `Example.wasm` (exporting the verified `add`, `xor`, and
 the `main` entry point) plus a small KaRaMeL JS loader bundle (`main.js`,
 `loader.js`, `shell.js`, `browser.js`, `main.html`, `layouts.json`, plus a
 `README` file with no extension).  `node main.js` instantiates the module
@@ -139,19 +210,19 @@ directory over HTTP and open `main.html`.
 ## Verify and extract individually
 
 ```bash
-nix build .#hello-checked   # F* verification only (no extraction)
-nix build .#hello-krml      # KaRaMeL extraction only (depends on checked)
+nix build .#fstar-example-checked   # F* verification only (no extraction)
+nix build .#fstar-example-krml      # KaRaMeL extraction only (depends on checked)
 ```
 
-`hello-checked` emits a directory containing `Hello.fst.checked` *plus* the
+`fstar-example-checked` emits a directory containing `Example.fst.checked` *plus* the
 ~421 pre-verified standard-library `.checked` files (the downstream
 verification cache).  Your module's `.checked` is the one named
-`Hello.fst.checked`.
+`Example.fst.checked`.
 
 ## Document (fsdoc)
 
 ```bash
-nix build .#hello-fsdoc
+nix build .#fstar-example-fsdoc
 cat result/fstar-docs.md
 ```
 
@@ -164,7 +235,7 @@ single Markdown outline.
 nix develop        # drops you in a shell with fstar.exe, kramel, python, OCaml LSP
 make check         # verify
 make krml          # extract to out/krml/*.krml
-make exe           # emit C, compile, link -> out/hello
+make exe           # emit C, compile, link -> out/fstar-example
 make clean
 ```
 
@@ -184,27 +255,28 @@ The devShell exports the environment the `Makefile` needs:
 Vim) at it for hover docs, diagnostics, and completions.
 
 > The editor LSP is a **dev-loop aid, not the verification gate** — the
-> `nix build .#hello-checked` run (with a Z3 resource limit) is the source of
+> `nix build .#fstar-example-checked` run (with a Z3 resource limit) is the source of
 > truth.
 
 ## Extending
 
-- **Edit the logic** — modify `src/Hello.fst` with your own verified functions,
+- **Edit the logic** — modify `src/Example.fst` with your own verified functions,
   lemmas, and `main`.
-- **Rename the module** — rename `src/Hello.fst` and change the single
-  `hello-module` binding in `flake.nix` (it flows into `default.nix` via
-  `module-name` and into the native exe + wasm derivations), then update the
-  `Hello_`/`Hello_add` symbol names in `src/main.c` (extracted C symbols are
-  `<Module>_<function>`).  The `Makefile` auto-discovers modules from
-  `src/*.fst`, so it needs no rename edits.
+- **Rename the module** (optional) — the verified module is a generic
+  placeholder named `Example`.  To rename it, do three things together:
+  rename `src/Example.fst` → `src/<Mod>.fst`, change its `module Example` header
+  → `module <Mod>`, and change the `module-name = "Example";` binding in
+  `flake.nix`.  The C entry symbol (`<Module>_main`) needs no hand-edit — the
+  `Makefile` generates `main.c` from the KaRaMeL-emitted header.  (Renaming the
+  *project* — `pname` — is separate and does NOT require renaming this module.)
 - **Add more modules** — list them (in dependency order, leaf modules first) in
   `ordered-src-modules` in `default.nix`; the `Makefile` auto-discovers modules
   from `src/*.fst`.
-- **Ship a library instead of an exe** — drop `src/main.c`, the `make exe`
-  target, and `hello-exe`; the `hello-krml` output is the library's extracted
-  `.krml`/C.
+- **Ship a library instead of an exe** — drop the `make exe` target and the
+  `${pname}-exe` derivation; the `${pname}-krml` output is the library's
+  extracted `.krml`/C.
 
-Module naming: this example is a *plain extractable* module (`module Hello`).
+Module naming: this example is a *plain extractable* module (`module Example`).
 For stateful Low\* code (heap buffers, `Stack` effects), the ecosystem
 convention is a `*.Low` suffix plus a two-layer spec/impl split.
 
@@ -216,19 +288,19 @@ wasm paths differ.
 
 ### The module has one `main` — the two targets consume it differently
 
-`src/Hello.fst` defines a single `main : unit -> St Int32.t` function.  All
+`src/Example.fst` defines a single `main : unit -> St Int32.t` function.  All
 three targets run *that same verified function*; they differ only in **who
 supplies the surrounding runtime** that calls it and hands back the exit code.
 
 | Target | Who supplies the entry point | What runs it |
 |--------|------------------------------|--------------|
-| `hello-exe` (`make exe`) | `src/main.c` | The OS / libc (`_start` → `main`) |
-| `hello-wasm` | KaRaMeL (exports a function named `main`) | The generated JS loader (`main.js`) |
+| `fstar-example-exe` (`make exe`) | generated `main.c` (from `Example.h`) | The OS / libc (`_start` → `main`) |
+| `fstar-example-wasm` | KaRaMeL (exports a function named `main`) | The generated JS loader (`main.js`) |
 
 ### Why the native (POSIX) target needs `main.c`
 
-KaRaMeL's C backend extracts `Hello.main` to a C function `Hello_main()` in the
-generated `Hello.c`, but it **deliberately does not emit a C `main()`**.  There
+KaRaMeL's C backend extracts `Example.main` to a C function `Example_main()` in the
+generated `Example.c`, but it **deliberately does not emit a C `main()`**.  There
 are two reasons:
 
 1. KaRaMeL can't know how *your* program wants to wire I/O, `argc`/`argv`, or
@@ -239,14 +311,15 @@ are two reasons:
 On a real OS the C toolchain already provides the runtime entry point
 (`_start` → `__libc_start_main` → `main`), so KaRaMeL's job is only to produce
 portable C; the boundary is "KaRaMeL gives you the library, the platform gives
-you `main`."  `src/main.c` is that two-line bridge for this template: it calls
-`Hello_main()` and forwards its exit code.
+you `main`."  The `Makefile` generates that two-line bridge for this template
+(from the `<Module>_main` prototype in the emitted header): it calls
+`Example_main()` and forwards its exit code.
 
 ```c
-#include "Hello.h"
+#include "Example.h"
 
 int main(void) {
-  return (int)Hello_main();
+  return (int)Example_main();
 }
 ```
 
@@ -256,10 +329,10 @@ A wasm module is just a bag of imports and exports — there is **no OS, no
 libc, no `_start`, and no caller** that already knows to run `main`.  So
 KaRaMeL's wasm backend *must* own the entire runtime, entry point included:
 
-- It exports the extracted `Hello.main` as a wasm function literally named
-  `main` (visible in the loader log as `Hello exports ... main ...`) — this is
-  what the `-no-prefix Hello` flag in `flake.nix` does: it strips the
-  `<Module>_` prefix so the export is `main` rather than `Hello_main`, which
+- It exports the extracted `Example.main` as a wasm function literally named
+  `main` (visible in the loader log as `Example exports ... main ...`) — this is
+  what the `-no-prefix Example` flag in `flake.nix` does: it strips the
+  `<Module>_` prefix so the export is `main` rather than `Example_main`, which
   is the name `main.js` searches for.
 - It generates a JS loader bundle (`main.js`, `loader.js`, `shell.js`,
   `browser.js`, `main.html`, `layouts.json`) that instantiates the module,
@@ -271,8 +344,8 @@ the wasm world, no C driver is needed.  You only need the `.wasm` file plus the
 JS loader to run it:
 
 ```bash
-nix build .#hello-wasm
-cd result && node main.js   # ... main found in module Hello
+nix build .#fstar-example-wasm
+cd result && node main.js   # ... main found in module Example
                             # ... done running main
 ```
 
@@ -286,14 +359,14 @@ because the two worlds have different entry-point rules.
 wasm was produced, the `.wasm` file is sufficient:
 
 ```bash
-head -c4 result/Hello.wasm | xxd      # 00000000: 0061 736d  (".asm" magic)
-file result/Hello.wasm                # WebAssembly (wasm) binary module ...
+head -c4 result/Example.wasm | xxd      # 00000000: 0061 736d  (".asm" magic)
+file result/Example.wasm                # WebAssembly (wasm) binary module ...
 # or validate it:
 nix shell nixpkgs#nodejs_22 -c node -e \
-  'console.log(WebAssembly.validate(new Uint8Array(require("fs").readFileSync("result/Hello.wasm"))))'
+  'console.log(WebAssembly.validate(new Uint8Array(require("fs").readFileSync("result/Example.wasm"))))'
 ```
 
-The KaRaMeL wasm backend also emits a human-readable `Hello.wast` alongside the
+The KaRaMeL wasm backend also emits a human-readable `Example.wast` alongside the
 binary if you want to inspect the module textually.
 
 ## Notes

@@ -12,12 +12,142 @@ A **reduction** of the Xeno flake — same mechanics, same overlay, same
 NOT a redesign. A reviewer diffing the two repos must be able to point at each
 template section and see a faithful, minimal copy of the original's idioms.
 
+## TASK (next session): DONE — usable nix flake template (in place)
+
+> The original plan was a dedicated `template/` subdir; that was abandoned at
+> the session lead's direction — the DoD is: **use this repo itself as the
+> template**, and `nix flake init -t .` → rename the library name → it compiles
+> against all targets first try.  The F# target is removed and stays removed.
+
+Goal (achieved): `nix flake init -t github:<you>/<repo>` (and `-t <local-path>`)
+copies this project directly; editing the single `pname` (and renaming the
+module file/header) yields a buildable new F* project that compiles against all
+targets first try.
+
+### Current template machinery (what exists today)
+
+- `templates.default = { path = ./. ; ... }` in `flake.nix` — points at the
+  **repository root**, so `nix flake init -t .` copies EVERYTHING tracked:
+  `.gitignore`, `AGENTS.md`, `LICENSE`, `README.md` (this repo's own long
+  README), `flake.lock`, `flake.nix`, `default.nix`, `Makefile`, `scripts/`,
+  `src/`.  The `result*` symlinks are git-ignored, so they are NOT copied.
+- Module naming is already threaded: `flake.nix` `hello-module = "Hello"` →
+  `default.nix` `module-name` → `ordered-src-modules`; the `Makefile`
+  auto-discovers modules from `src/*.fst`.  Remaining hardcoded couplings:
+  the `packages.hello-*` attribute **names** (not just their bodies), the
+  `Hello_*` C symbols in `src/main.c` (noted as "cannot be auto-derived
+  without codegen"), and `src/Hello.fst`'s `module Hello`.
+- `flake.lock` is checked in and pins the `dysinger/fstar` (LSP fork) +
+  `dysinger/karamel` (`coextract`) forks + nixpkgs `c31cf09`.
+
+### Problems to solve
+
+1. **`path = ./.` copies the repo, not a starter project.**  A consumer gets
+   this repo's AGENTS.md, LICENSE, README (with the F# war story and the Xeno
+   diff narrative), and the pinned lockfile.  Decide the intended "fresh
+   project" surface and put it in a dedicated subdir (e.g. `./template` or
+   `./template/default`) containing ONLY the starter: a **new** minimal
+   `flake.nix`, `default.nix`, `Makefile`, `src/`, `scripts/`, a short `.gitignore`,
+   and a short project `README` (or `welcomeText` that writes one).
+
+2. **Renamability is the key usability bar.**  A user should be able to run
+   `nix flake init -t ...`, rename the package (e.g. `frost`), and have it
+   build without hand-editing flake.nix/default.nix/Makefile/main.c.  This
+   means parameterizing (or at least single-sourcing) the project name so a
+   single top-level `pname`/`sysName` binding flows into: flake attribute
+   names, `default.nix`, the Makefile, the `.fst` module name, the `main.c`
+   entry symbol, and the wasm `-no-prefix`.  Investigate whether the `Hello_*`
+   C symbols in `main.c` can be generated (KaRaMeL emits `Hello.h` with the
+   exact prototypes — can a small `cc`/`sed`/`generate.sh` step derive the
+   symbol instead of hand-writing it?).
+
+3. **`flake.lock`: ship or omit?**  For a *remote* template the lockfile pins
+   the dysinger forks; decide whether the template's own `flake.nix` should (a)
+   carry `flake.lock` for reproducibility, (b) `.gitignore` it and let users
+   `nix flake update`, or (c) point inputs at upstream `FStarLang/FStar` +
+   `FStarLang/karamel` instead of the forks.  This is a product decision, not
+   just mechanics — note it and make the call.
+
+4. **Nix flake-template contract.**  A `templates.<name>.path` must point at a
+   directory that *itself contains a `flake.nix`* (that is what `nix flake
+   init` copies and what `nix build` in the new project evaluates).  Confirm
+   the copied project builds standalone after `init` (the `fstar`/`karamel`
+   inputs must not accidentally resolve to `self` or a relative path back into
+   this repo).  Consider adding multiple named templates later (e.g. `default`
+   = exe+wasm, `library` = no `main.c`) but start with ONE clean `default`.
+
+5. **Test the remote path end-to-end.**  `nix flake init -t
+   github:<you>/<repo>` requires the changes to be **committed and pushed**;
+   `nix flake init -t /local/path` tests local (but still hits the
+   git-dirty/lockfile resolution paths).  Verify both, then prove the output
+   builds with `nix build`, `make check`, `make exe`, and `node main.js` for the
+   wasm target.
+
+### Non-goals / guardrails
+
+- Do NOT re-add F# (removed this session for cause — see above).
+- Do NOT break the existing `.#hello-*` attributes for THIS repo; the template
+  should be *a thing you can also consume from here*, and the hello example
+  should keep building as-is until the template is separately validated.
+- Keep each extraction target's derivation idiom (verify-then-extract,
+  single-source from `hello-krml`, case-exact guards) — a "proper template" is
+  about *renamability + a clean copied surface*, NOT a redesign of the build
+  mechanics (respect the original Goal's "NOT a redesign" constraint).
+
+### Open questions to resolve before/while implementing
+
+- What should the copied starter be *named* by default if not "hello"?  Pick a
+  neutral placeholder (e.g. `pname = "hello"` kept as the obvious example, or
+  a `{{ projectName }}`-style token the README tells users to fill in).  Nix
+  flakes have no templating/`--name` flag (`nix flake init` does not accept a
+  name argument), so renaming is a manual edit followed by a build — document
+  the exact steps and make them minimal (ideally one edit).
+- Ship a short generated README in the template (so the new project has docs)
+  vs. rely on `welcomeText` only.
+
 ## Current state (resolved)
 
-The template is a **working, reviewed flake template** that builds all five
-targets and runs on aarch64-darwin. It is a git repo now (not "NOT a git repo"
-as an earlier handoff claimed). Recent work (see git log) fixed reviewer
-findings from a brutal pass:
+The template is a **working, reviewed flake template** that builds all targets
+and runs on aarch64-darwin.  It is a git repo now (not "NOT a git repo" as an
+earlier handoff claimed).
+
+### Flake-template conversion (this session)
+
+`templates.default.path = ./.;` — **the repository root is the template**
+(no `template/` subdir).  `nix flake init -t .` copies this project directly.
+
+Resolved decisions (from the open questions):
+
+- **Renamability = ONE edit.**  A single `pname` binding in `flake.nix`
+  (default `"fstar-example"`) is the source of truth.  It drives every
+  user-facing output: flake attribute names (`packages."${pname}-…"`),
+  the native exe basename (`bin/<pname>`), the C/Rust/OCaml library names
+  (`lib<pname>.so`, `lib<pname>.rlib`, `<pname>.cmxa`), and the wasm
+  `-no-prefix`.
+- **The F* module is a GENERIC, decoupled placeholder** named `Example`
+  (`src/Example.fst`, `module Example`, `module-name = "Example"`).  It is NOT
+  derived from `pname`, so renaming the project does not touch the source
+  module.  Renaming the module is a separate optional step (file + `module`
+  header + `module-name` binding).  KaRaMeL names extracted artifacts after
+  the module (`Example.c`/`.h`/`.krml`/`.ml`/`.rs`/`.wasm`), while output
+  libraries/binaries are named after `pname`.
+- **The `main.c` C-symbol coupling is SOLVED**: the `Makefile` **generates**
+  `out/main.c` from the KaRaMeL-emitted `<Module>.h` (which declares the exact
+  `<Module>_main` prototype).  No hand-written symbol; `src/main.c` is deleted.
+- **`flake.lock`**: kept committed (pinned to the `dysinger/fstar`
+  `v2025.10.06+lsp` + `dysinger/karamel` `coextract` forks + nixpkgs `c31cf09`).
+  Pointing at upstream `FStarLang/FStar`/`karamel` `master` was tried and
+  REJECTED: upstream's `.nix/fstar.nix` has a different interface (requires a
+  `karamel-src` arg the overlay does not pass), so upstream is not a drop-in.
+
+Verified this session on aarch64-darwin: `nix flake init -t .` → change
+`pname` to `i18n` (ONE edit, module stays `Example`) → `nix build` all eight
+`i18n-*` targets: `-checked`, `-krml`, `-exe` (`bin/i18n`, exit 0), `-native`
+(`libi18n.so` + `Example.h` declaring `int32_t Example_main(void)`), `-rust`
+(`libi18n.rlib`), `-ocaml` (`i18n.cmxa`/`.cmi`), `-wasm` (`Example.wasm`
+exporting `main`; `node main.js` exit 0), `-fsdoc`.
+
+Recent work (see git log) fixed reviewer findings from a brutal pass:
 
 - `src/Hello.fst` no longer mislabels `main` as Low*; `zero` is used and
   consistently `inline_for_extraction`.
@@ -44,7 +174,6 @@ findings from a brutal pass:
 | `.#hello-native` | C library `libhello.so` + `Hello.h` (compiled via `cc -shared`) |
 | `.#hello-rust` | Rust rlib `libhello.rlib` (compiled via `rustc --crate-type lib`) |
 | `.#hello-ocaml` | OCaml findlib package `hello.cmxa`/`.cmi` (via `ocamlPackages.buildDunePackage`) |
-| `.#hello-fsharp` | F# source `Hello.fs` (Fantomas cannot parse F*'s `#light "off"` output) |
 | `.#hello-wasm` | `Hello.wasm` + JS loader (`node main.js` exit 0) |
 | `.#hello-fsdoc` | fsdoc → Markdown |
 | `templates.default` | nix flake init -t |
@@ -54,7 +183,6 @@ findings from a brutal pass:
 | System | Backend | Attribute | Output |
 |--------|---------|-----------|--------|
 | `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `hello.cmxa` (findlib pkg) |
-| `fstar.exe --codegen` | `FSharp` | `.#hello-fsharp` | `.fs` |
 | `fstar.exe --codegen` | `krml` | `.#hello-krml` | `.krml` (IR) |
 | `krml -backend` | `c` | `.#hello-native` | `libhello.so` + `.h` |
 | `krml -backend` | `rust` | `.#hello-rust` | `libhello.rlib` |
@@ -84,25 +212,17 @@ are compiler-plugin/extension-building modes, not output languages.)
 - The `hello-wasm` derivation is a KaRaMeL-native-backend invocation, not a
   `make` target (there is no Makefile wasm step to delegate to; the native link
   is the only Makefile step). This is intentional and documented in flake.nix.
-- **"Figure out F* → F#" — NEXT SESSION.** `hello-fsharp` currently emits
-  source-only `Hello.fs` (`fstar.exe --codegen FSharp`), then stops. The
-  extracted output uses `#light "off"` verbose syntax and references
-  `FStar_UInt8` / `FStar_Int32` / `Prims` / `Stdint.Int32`. Known blockers to
-  compiling it:
-  1. **No F# runtime**: F* ships no `.fs`/`.fsx`/`.fsproj`/`.dll` — only the
-     OCaml runtime. The `FStar_UInt8`/`Prims`/`Stdint` symbols have no backing
-     assembly to link against. There is nothing to `dotnet build` yet.
-  2. **Fantomas cannot parse it** (tried): `fantomas Hello.fs` fails with
-     "Could not parse file" — Fantomas targets `#light` (idiomatic) F#, not
-     F*'s `#light "off"` verbose output.
-  To make `hello-fsharp` a real compile target next session, one of:
-  - find/produce an F#-equivalent of the OCaml `fstar.lib` runtime (`.fs`
-    sources for `Prims`/`FStar_UInt8`/`FStar_Int32`/`Stdint`), then a
-    `dotnet`/`.fsproj` build; or
-  - keep it source-only and document that (current state), and drop the
-    "compile" framing for F# specifically.
-  The OCaml/C/Rust targets are already real compile targets (see Targets below);
-  F# is the only remaining source-only extraction backend.
+- **"F* → F#" — REMOVED (no `hello-fsharp` target).**  F*'s own repository
+  marks the F# path untested: its `fsharp/README` says "currently not tested
+  by anything in this repository", and its `examples/hello/README.md` says
+  "None of this worked for me. I am disabling this directory for now."
+  Investigation confirmed the F# backend is genuinely unsupported: no F#
+  runtime is packaged in the `fstar` derivation, and the codegen
+  (`string_of_mlconstant` in `FStarC.Extraction.ML.Code.fst`) emits bare `int`
+  literals that do not typecheck against the (unshipped) `bigint`-backed
+  `FStar_UInt8` runtime.  Rather than ship a patch to compensate for an
+  upstream-unmaintained backend, this template deliberately omits F#.  See the
+  NOTE comment where `hello-fsharp` used to be in `flake.nix`.
 
 ## Definition of done
 

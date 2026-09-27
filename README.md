@@ -70,17 +70,34 @@ initializing, rename `Hello.fst` (see the "Rename the module" bullet under
 | Flake attribute | What it produces | Runnable? |
 |-----------------|------------------|-----------|
 | `.#hello-checked` | F\* verification (`Hello.fst.checked` + stdlib `.checked` cache) | no |
-| `.#hello-krml` | KaRaMeL extraction (`Hello.krml`) | no |
+| `.#hello-krml` | KaRaMeL extraction (`Hello.krml` — intermediate IR) | no |
 | `.#hello-exe` | Native executable (`bin/hello`) | **yes** |
+| `.#hello-native` | Native C library (`Hello.c` + `Hello.h`) | no |
+| `.#hello-rust` | Rust source (`hello.rs`) | compile (lib) |
+| `.#hello-ocaml` | OCaml source (`Hello.ml`) | compile |
+| `.#hello-fsharp` | F# source (`Hello.fs`) | compile |
 | `.#hello-wasm` | WebAssembly module + JS loader bundle | **yes** |
 | `.#hello-fsdoc` | `fsdoc` comments → Markdown | no |
 
 `nix build` with no argument builds the default package (`hello-krml`).
 
+Every supported F* extraction target has a flake attribute:
+
+| System | Backend | Attribute | Output |
+|--------|---------|-----------|--------|
+| F* `fstar.exe --codegen` | `OCaml` | `.#hello-ocaml` | `.ml` |
+| F* `fstar.exe --codegen` | `FSharp` | `.#hello-fsharp` | `.fs` |
+| F* `fstar.exe --codegen` | `krml` | `.#hello-krml` | `.krml` (IR) |
+| KaRaMeL `krml -backend` | `c` | `.#hello-native` | `.c`/`.h` |
+| KaRaMeL `krml -backend` | `rust` | `.#hello-rust` | `.rs` |
+| KaRaMeL `krml -backend` | `wasm` | `.#hello-wasm` | `.wasm` |
+
 ## Build everything
 
 ```bash
-nix build .#hello-checked .#hello-krml .#hello-exe .#hello-wasm .#hello-fsdoc
+nix build \
+  .#hello-checked .#hello-krml .#hello-exe .#hello-native \
+  .#hello-rust .#hello-ocaml .#hello-fsharp .#hello-wasm .#hello-fsdoc
 ```
 
 ## Run the native executable

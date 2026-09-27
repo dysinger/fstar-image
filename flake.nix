@@ -1,3 +1,6 @@
+# Copyright 2026 Department of Code LLC.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 {
   description = "Minimal verified F* project template (fstar-example)";
 
@@ -123,6 +126,16 @@
           inherit pkgs pname module-name;
         };
 
+        # Shared package metadata (license + maintainer), applied to every
+        # package exposed by this flake.
+        common-meta = {
+          license = pkgs.lib.licenses.agpl3Plus;
+          maintainers = [{
+            name = "Tim Dysinger";
+            email = "tim@dysinger.net";
+          }];
+        };
+
       in
       {
         packages.default = _pkg.krml;
@@ -140,6 +153,7 @@
           version = "0.1.0";
           src = ./. ;
           nativeBuildInputs = [ pkgs.gnumake ];
+          meta = common-meta;
           # fstar is needed by the Makefile's `ULIB := $(shell $(FSTAR)
           # --locate_lib ...)` at parse time; karamel + fstar-krml by the link;
           # the pre-built krml is pre-populated.  fstar-checked is intentionally
@@ -183,6 +197,7 @@
           name = "${pname}-wasm";
           src = ./.;
           nativeBuildInputs = [ fstar karamel ];
+          meta = common-meta;
           buildPhase = ''
             mkdir -p wasm-out
             export KRML_HOME="${karamel.home}"
@@ -256,6 +271,7 @@ DUNE
           pname = "${pname}-ocaml";
           version = "0.1.0";
           src = ocaml-src;
+          meta = common-meta;
           # Expose the fstar OCaml runtime (fstar.lib findlib package) plus the
           # transitive deps fstar.lib's META declares: batteries pprint stdint
           # yojson zarith ppx_deriving*.  All live in ocamlPackages (5.3).
@@ -286,6 +302,7 @@ DUNE
           name = "${pname}-native";
           src = ./. ;
           nativeBuildInputs = [ fstar karamel pkgs.stdenv.cc ];
+          meta = common-meta;
           buildPhase = ''
             mkdir -p native-out
             export KRML_HOME="${karamel.home}"
@@ -336,6 +353,7 @@ DUNE
           name = "${pname}-rust";
           src = rust-src;
           nativeBuildInputs = [ pkgs.rustc ];
+          meta = common-meta;
           buildPhase = ''
             # KaRaMeL's rust backend names the emitted file after the MODULE
             # (`<Module>.rs`), but the crate/library is named after `pname`.

@@ -1,3 +1,6 @@
+# Copyright 2026 Department of Code LLC.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Minimal verified F* package.
 #
 # Takes pkgs with fstar, karamel, fstar-checked in scope (from the nixpkgs
@@ -29,6 +32,13 @@ let
     version = "0.1.0";
     src = ./.;
     nativeBuildInputs = [ fstar ];
+    meta = {
+      license = pkgs.lib.licenses.agpl3Plus;
+      maintainers = [{
+        name = "Tim Dysinger";
+        email = "tim@dysinger.net";
+      }];
+    };
     # Intentional (mirrors xeno/codec/default.nix): write straight to $out in
     # buildPhase and no-op installPhase — these derivations just stage a
     # directory of compiler artifacts, not a build/install split.
@@ -53,6 +63,13 @@ let
     version = "0.1.0";
     src = ./.;
     nativeBuildInputs = [ fstar ];
+    meta = {
+      license = pkgs.lib.licenses.agpl3Plus;
+      maintainers = [{
+        name = "Tim Dysinger";
+        email = "tim@dysinger.net";
+      }];
+    };
     buildPhase = ''
       mkdir -p $out
       cp ${checked}/*.checked $out/ 2>/dev/null || true

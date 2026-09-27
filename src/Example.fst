@@ -1,3 +1,6 @@
+(* Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later *)
+
 (** Example — a minimal verified F* module that extracts to C (KaRaMeL) and
     runs natively or in WebAssembly.
 

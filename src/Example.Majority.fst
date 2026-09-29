@@ -1,7 +1,7 @@
 (* Copyright 2026 Department of Code LLC.
    SPDX-License-Identifier: AGPL-3.0-or-later *)
 
-(** Majority — the pure Boyer–Moore majority-vote algorithm.
+(** Example.Majority — the pure Boyer–Moore majority-vote algorithm.
 
     Boyer–Moore is the classic linear-time, constant-space algorithm for
     finding a majority element.  It has two passes:
@@ -15,9 +15,9 @@
          confirm it is a strict majority.
 
     This module is the *pure algorithm layer*: total functions over
-    [Seq.seq Majority.Types.elem] with no heap.  The corresponding Pulse leaf
-    ([Majority.Pulse]) re-implements the same pass over a mutable array and
-    ties its result back to this pure spec by a lemma.
+    [Seq.seq Example.Majority.Types.elem] with no heap.  The corresponding
+    Pulse leaf ([Example.Majority.Pulse]) re-implements the same pass over a
+    mutable array and ties its result back to this pure spec by a lemma.
 
     The deep Boyer–Moore invariant ("the surviving candidate is the only
     possible majority") is *stated in prose* below and exercised on concrete
@@ -25,9 +25,9 @@
     verification-pass correspondence, which is the definitional part of the
     algorithm and is discharged by reduction.
 
-    @header Majority
+    @header Example.Majority
 *)
-module Majority
+module Example.Majority
 
 open FStar.Seq
 open FStar.UInt32
@@ -35,8 +35,7 @@ open FStar.List.Tot
 
 module U32 = FStar.UInt32
 module Seq = FStar.Seq
-module MT = Majority.Types
-open MT
+open Example.Majority.Types
 
 (** [candidate_step] — one step of the Boyer–Moore scan.
 

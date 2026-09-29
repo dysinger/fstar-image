@@ -1,23 +1,23 @@
 (* Copyright 2026 Department of Code LLC.
    SPDX-License-Identifier: AGPL-3.0-or-later *)
 
-(** Main — the command-line entry point of the Boyer–Moore example.
+(** Example.Majority.CLI — the command-line entry point of the Boyer–Moore example.
 
     [main] builds a small, *static* vote sequence (a compile-time constant),
-    runs [Majority.Pulse.majority_vote] over it, and returns a process exit
-    status: [0] when the extracted scan finds the expected majority element
-    ([2]), [1] otherwise.  Custard compiles it with `--custard_main Main.main`
-    into a standalone C program.
+    runs [Example.Majority.Pulse.majority_vote] over it, and returns a process
+    exit status: [0] when the extracted scan finds the expected majority
+    element ([2]), [1] otherwise.  Custard compiles it with
+    `--custard_main Example.Majority.CLI.main` into a standalone C program.
 
     The sequence lives in the program image (`Pulse.Lib.GlobalArray`), so
     there is no runtime allocation — the array is read-only, which matches the
-    Boyer–Moore candidate pass (it never writes).  This makes [Main] the
-    *consumer* of the [Majority.Pulse] leaf, exercising the exact C-API a
-    downstream linker would call.
+    Boyer–Moore candidate pass (it never writes).  This makes
+    [Example.Majority.CLI] the *consumer* of the [Example.Majority.Pulse] leaf,
+    exercising the exact C-API a downstream linker would call.
 
-    @header Main
+    @header Example.Majority.CLI
 *)
-module Main
+module Example.Majority.CLI
 #lang-pulse
 
 open Pulse
@@ -27,7 +27,7 @@ module G = Pulse.Lib.GlobalArray
 module US = FStar.SizeT
 module U32 = FStar.UInt32
 module I32 = FStar.Int32
-open Majority.Types
+open Example.Majority.Types
 
 (** A fixed vote sequence: [2; 2; 1; 2; 1; 2].  The majority element is [2]. *)
 (** The vote table as a top-level static array.  (Custard requires a static
@@ -44,7 +44,7 @@ fn main ()
   let arr = G.array_of_static_array votes;
   with p s. assert (A.pts_to arr #p s);
   A.pts_to_len arr;
-  let r = Majority.Pulse.majority_vote arr 6ul;
+  let r = Example.Majority.Pulse.majority_vote arr 6ul;
   with p s. assert (A.pts_to arr #p s);
   drop_ (A.pts_to arr #p s);
   match r {

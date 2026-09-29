@@ -1,21 +1,22 @@
 (* Copyright 2026 Department of Code LLC.
    SPDX-License-Identifier: AGPL-3.0-or-later *)
 
-(** Majority.Types — the pure spec for the Boyer–Moore majority-vote example.
+(** Example.Majority.Types — the pure spec for the Boyer–Moore majority-vote example.
 
     This is the *pure spec module*: it defines the mathematical notion of a
     *majority element* of a sequence (an element that occurs strictly more
     than half the time) and proves the basic lemmas that the algorithm module
-    ([Majority]) and the Pulse leaf ([Majority.Pulse]) both rely on.
+    ([Example.Majority]) and the Pulse leaf ([Example.Majority.Pulse]) both
+    rely on.
 
     There is no state, no heap, no extraction-relevant code here — only
     erased-in-extraction `Lemma`s and total pure functions.  This split
     (Types / algorithm / Pulse leaf) is the canonical three-layer library
     shape this template demonstrates.
 
-    @header Majority.Types
+    @header Example.Majority.Types
 *)
-module Majority.Types
+module Example.Majority.Types
 
 open FStar.Seq
 open FStar.UInt32

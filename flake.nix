@@ -142,6 +142,7 @@
 
         apps = {
           default = flake-utils.lib.mkApp { drv = self.packages.${system}.cli; };
+          cli = flake-utils.lib.mkApp { drv = self.packages.${system}.cli; };
         };
 
         devShells.default = pkgs.mkShell {
@@ -177,7 +178,7 @@
           3. nix build
 
           - Build everything: nix build \
-              .#checked .#ocaml .#native .#cli
+              .#checked .#ocaml .#native .#fsharp .#cli
           - Dev loop:   nix develop && make check
           - Run the CLI: nix run .#cli
         '';

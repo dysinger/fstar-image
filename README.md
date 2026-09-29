@@ -57,29 +57,29 @@ four layers, mirroring the `fstar-codec` Types / Codec / Pulse split:
 
 | Module | Layer | Effect | Purpose |
 |--------|-------|--------|---------|
-| `Majority.Types` | pure spec | `Tot` | `elem`/`count`/`majority` + `lemma_count_empty` |
-| `Majority` | pure algorithm | `Tot` | `candidate_step`/`bm_scan`/`find_candidate` + lemmas |
-| `Majority.Pulse` | Pulse leaf | `stt` (`fn`) | `majority_vote` over a mutable array, C/OCaml extractable |
-| `Main` | CLI entry | `stt` (`fn`) | allocates a static vote table, runs the leaf, returns exit status |
+| `Example.Majority.Types` | pure spec | `Tot` | `elem`/`count`/`majority` + `lemma_count_empty` |
+| `Example.Majority` | pure algorithm | `Tot` | `candidate_step`/`bm_scan`/`find_candidate` + lemmas |
+| `Example.Majority.Pulse` | Pulse leaf | `stt` (`fn`) | `majority_vote` over a mutable array, C/OCaml extractable |
+| `Example.Majority.CLI` | CLI entry | `stt` (`fn`) | allocates a static vote table, runs the leaf, returns exit status |
 
-- `Majority.Types` defines the mathematical notion `majority x s` (an element
+- `Example.Majority.Types` defines the mathematical notion `majority x s` (an element
   occurring strictly more than half the time) and proves `lemma_count_empty`.
-- `Majority` implements `find_candidate` — the Boyer–Moore candidate-selection
+- `Example.Majority` implements `find_candidate` — the Boyer–Moore candidate-selection
   pass — and `verify` (the verification pass).  It also carries the *proven*
   bridge lemmas the Pulse leaf relies on: `candidate_step_u32` (the extractable
   `U32.t`-counter form of the one-step transition), `bm_scan` (the fold by
   index), `lemma_bm_scan_step`, and `lemma_find_candidate_slice`.
-- `Majority.Pulse` re-implements the same scan over a
+- `Example.Majority.Pulse` re-implements the same scan over a
   `Pulse.Lib.Array.array U32.t` with a `while` loop, and its post-condition ties
-  the surviving candidate back to `Majority.find_candidate` — the spec↔impl
+  the surviving candidate back to `Example.Majority.find_candidate` — the spec↔impl
   correspondence is discharged by the pure lemmas.
-- `Main` binds a *static* vote table (`Pulse.Lib.GlobalArray`, a compile-time
+- `Example.Majority.CLI` binds a *static* vote table (`Pulse.Lib.GlobalArray`, a compile-time
   constant) and calls `majority_vote`; Custard compiles it with
-  `--custard_main Main.main` into a standalone C program whose exit status
+  `--custard_main Example.Majority.CLI.main` into a standalone C program whose exit status
   reports whether the scan found the expected winner.
 
 Everything verifies with **zero admits** — every lemma discharges through SMT
-or a hand-written proof in `Majority.fst`.
+or a hand-written proof in `Example.Majority.fst`.
 
 ## Prerequisites
 
@@ -94,10 +94,10 @@ connection to fetch `nixpkgs` and the pinned `fstar` fork.
 ├── default.nix        # builds every target (checked/ocaml/native/fsharp/cli)
 ├── Makefile           # the no-nix shell build (owns module order)
 └── src/
-    ├── Majority.Types.fst     # pure spec
-    ├── Majority.fst           # pure algorithm + lemmas
-    ├── Majority.Pulse.fst     # Pulse leaf (C/OCaml extractable)
-    └── Main.fst               # CLI entry point (--custard_main)
+    ├── Example.Majority.Types.fst   # pure spec
+    ├── Example.Majority.fst         # pure algorithm + lemmas
+    ├── Example.Majority.Pulse.fst   # Pulse leaf (C/OCaml extractable)
+    └── Example.Majority.CLI.fst     # CLI entry point (--custard_main)
 ```
 
 ## Targets
@@ -105,8 +105,8 @@ connection to fetch `nixpkgs` and the pinned `fstar` fork.
 | Flake attribute | What it produces | Runnable? |
 |-----------------|------------------|-----------|
 | `.#checked` | F\* verification (`.checked` files, 0-admit) | no |
-| `.#ocaml` | OCaml findlib package (`fstar-example.cmxa`) | no |
-| `.#native` | C11 shared/static lib (`libfstar-example.{dylib,so,a}` + `.h`) | no |
+| `.#ocaml` | OCaml findlib package (`fstar_example.cmxa`) | no |
+| `.#native` | C11 shared/static lib (`libfstar-example.{dylib,so,a}` + `fstar-example.h`) | no |
 | `.#fsharp` | .NET library assembly (`Custard.dll`) | no |
 | `.#cli` | standalone C executable (`bin/fstar-example-cli`) | **yes** |
 
@@ -121,24 +121,25 @@ plus the CLI):
 | OCaml | `--codegen OCaml` (pure) + `--custard_backend OCaml` (Pulse) | `.#ocaml` | findlib package |
 | C library | `--codegen Custard --custard_backend C` | `.#native` | `libfstar-example.*` + `.h` |
 | F# library | `--codegen Custard --custard_backend FSharp` | `.#fsharp` | .NET assembly |
-| C executable | Custard + `--custard_main Main.main` | `.#cli` | `bin/fstar-example-cli` |
+| C executable | Custard + `--custard_main Example.Majority.CLI.main` | `.#cli` | `bin/fstar-example-cli` |
 
 The runtime backends exercise the Custard split exactly like `fstar-codec`:
 
-- **OCaml** extracts the *pure spec* (`Majority.Types` + `Majority` via
-  `--codegen OCaml`) *and* the Pulse leaf (`Majority.Pulse` via
+- **OCaml** extracts the *pure spec* (`Example.Majority.Types` + `Example.Majority` via
+  `--codegen OCaml`) *and* the Pulse leaf (`Example.Majority.Pulse` via
   `--custard_backend OCaml`) as one dune library.
-- **native (C)** extracts the *Pulse leaf* (`Majority.Pulse`, whose runtime
+- **native (C)** extracts the *Pulse leaf* (`Example.Majority.Pulse`, whose runtime
   body stays in `U32.t` + `Pulse.Lib.Array` + Pulse primitives) via Custard's
-  `--custard_backend C`, rooted at `--custard_entry Majority.Pulse.majority_vote`.
+  `--custard_backend C`, rooted at `--custard_entry Example.Majority.Pulse.majority_vote`.
 - **fsharp** extracts the same Pulse leaf via `--custard_backend FSharp` and
   builds it with `dotnet`.
-- **cli** extracts `Main` the same way but roots `--custard_main Main.main`, so
+- **cli** extracts `Example.Majority.CLI` the same way but roots
+  `--custard_main Example.Majority.CLI.main`, so
   Custard emits a standalone `main` that calls the leaf.  (This is the one
   addition over `fstar-codec`, which has no CLI.)
 
 > To keep the Pulse leaf extractable in *all three* backends, its result type
-> is the F\*-defined variant [Majority.Types.vote_result] (not the stdlib
+> is the F\*-defined variant [Example.Majority.Types.vote_result] (not the stdlib
 > `option`/`tuple`, which are hand-written OCaml with no F# realization —
 > Error 395).  See the Pulse-idiom note under "Extending".
 
@@ -164,9 +165,9 @@ nix run .#cli
 echo $?   # -> 0
 ```
 
-The generated C program links the `Majority.Pulse.majority_vote` entry point
-through `--custard_main Main.main`: Custard emits an `int main(void)` that
-invokes `Main.main`, which runs the Boyer–Moore scan over a static vote table
+The generated C program links the `Example.Majority.Pulse.majority_vote` entry point
+through `--custard_main Example.Majority.CLI.main`: Custard emits an `int main(void)` that
+invokes `Example.Majority.CLI.main`, which runs the Boyer–Moore scan over a static vote table
 and returns `0` when the expected majority element (`2`) is found.  It performs
 no I/O; the exit status is the whole observable behaviour.
 
@@ -176,12 +177,12 @@ no I/O; the exit status is the whole observable behaviour.
 nix build .#checked   # F* verification only (no extraction)
 nix build .#native    # extract the Pulse leaf to C11
 nix build .#fsharp    # extract the Pulse leaf to F# -> .NET assembly
-nix build .#cli       # extract Main to a standalone C program
+nix build .#cli       # extract Example.Majority.CLI to a standalone C program
 ```
 
 `.#checked` emits a directory containing the `.checked` files for
-`Majority.Types`, `Majority`, `Majority.Pulse`, and `Main`, plus the
-~330 pre-verified standard-library `.checked` cache they were verified against.
+`Example.Majority.Types`, `Example.Majority`, `Example.Majority.Pulse`, and `Example.Majority.CLI`, plus the
+~337 pre-verified standard-library `.checked` cache they were verified against.
 
 ## Dev loop (`nix develop` + Makefile)
 
@@ -212,18 +213,18 @@ Vim) at it for hover docs, diagnostics, and completions.
 
 ## Extending
 
-- **Edit the logic** — modify the `Majority.*` modules with your own verified
-  functions, lemmas, and scan; the `Main` module is the thin CLI wrapper.
-- **Rename the module** (optional) — rename `src/Majority.Types.fst` etc. and
-  their `module Majority.Types` headers; the `Makefile`'s `SRC_MODS` and
+- **Edit the logic** — modify the `Example.Majority.*` modules with your own verified
+  functions, lemmas, and scan; the `Example.Majority.CLI` module is the thin CLI wrapper.
+- **Rename the module** (optional) — rename `src/Example.Majority.Types.fst` etc. and
+  their `module Example.Majority.Types` headers; the `Makefile`'s `SRC_MODS` and
   `default.nix`'s module lists carry the order.  The Custard entry symbols
-  (`--custard_entry Majority.Pulse.majority_vote`, `--custard_main Main.main`)
+  (`--custard_entry Example.Majority.Pulse.majority_vote`, `--custard_main Example.Majority.CLI.main`)
   follow the module names, so keep them in sync.
 - **Add more modules** — list them (in dependency order, leaf modules first) in
   the `Makefile`'s `SRC_MODS`; a plain alphabetical `sort` would verify a
   dependent module before its leaf and trigger F\* Warning 247.
 - **Ship a library instead of a CLI** — drop the `cli` derivation (and
-  `--custard_main Main.main`); the `native` derivation (`--custard_entry`) is
+  `--custard_main Example.Majority.CLI.main`); the `native` derivation (`--custard_entry`) is
   already the "library" shape, exposing a C entry point for a hand-written
   host.
 
@@ -238,7 +239,7 @@ renaming.
 
 ### The Pulse idiom (pinned here)
 
-The `Majority.Pulse` leaf followed the `fstar-codec` pattern and is worth
+The `Example.Majority.Pulse` leaf followed the `fstar-codec` pattern and is worth
 imitating closely:
 
 - **Array**: `A.array U32.t` (`Pulse.Lib.Array`), view `A.pts_to b s`
@@ -257,7 +258,7 @@ imitating closely:
   primitives; `Seq`/`nat`/`list` appear only in erased specs and `Lemma`s,
   never in extracted bodies (Error 368 otherwise).
 - **F#-extractability**: the leaf's result type must be an F\*-defined variant
-  (here [Majority.Types.vote_result]), not the stdlib `option`/`tuple` — those
+  (here [Example.Majority.Types.vote_result]), not the stdlib `option`/`tuple` — those
   are hand-written OCaml with no F# realization and Fail with Error 395 when
   reached from a rooted entry point.  `fstar-codec` does the same
   (`decode_result_c`, `DR_Inl`/`DR_Inr`).

@@ -17,7 +17,7 @@ ULIB := $(shell $(FSTAR) --locate_lib 2>/dev/null || echo /none)/ulib
 
 # Pulse ships in the install under $(locate_lib)/pulse (sources under
 # pulse/{common,pulse/lib}, `.checked` under pulse/{common.checked,
-# pulse.checked}).  Majority.Pulse needs these, since FSTAR_FLAGS uses
+# pulse.checked}).  Example.Majority.Pulse needs these, since FSTAR_FLAGS uses
 # --no_default_includes.
 FLIB := $(shell $(FSTAR) --locate_lib 2>/dev/null || echo /none)
 PULSE_DIRS := $(FLIB)/pulse/common\
@@ -33,11 +33,11 @@ FSTAR_FLAGS = --no_default_includes \
 # ── F* verification ───────────────────────────────────────────────
 
 # Source modules in DEPENDENCY ORDER (leaf modules first).
-SRC_MODS := Majority.Types Majority Majority.Pulse Main
+SRC_MODS := Example.Majority.Types Example.Majority Example.Majority.Pulse Example.Majority.CLI
 TST_MODS :=
 
 # Pulse-only modules skip re-verification (they ship pre-verified in the F*
-# install); Majority.Pulse opens Pulse.Lib.* which would otherwise time out
+# install); Example.Majority.Pulse opens Pulse.Lib.* which would otherwise time out
 # re-verifying the whole Pulse stdlib on every `make check`.
 ALREADY_CACHED := Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore
 

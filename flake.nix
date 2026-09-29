@@ -127,14 +127,21 @@
 
       in
       {
-        packages.default = _pkg.checked;
-        packages.fstar-example-checked = _pkg.checked;
-        packages.fstar-example-ocaml = _pkg.ocaml;
-        packages.fstar-example-native = _pkg.native;
-        packages.fstar-example-cli = _pkg.cli;
+        # The build targets are named by deliverable (no `fstar-example-`
+        # prefix), mirroring fstar-codec exactly: `default` aliases `native`
+        # (the C11 shared/static lib), plus `checked`/`ocaml`/`fsharp`.
+        # `cli` is the one template-only addition (fstar-codec has no CLI).
+        # Note `native` IS `checked`+`ocaml`+`fsharp`'s sibling; the four
+        # library targets are exactly fstar-codec's set.
+        packages.default = _pkg.native;
+        packages.checked = _pkg.checked;
+        packages.ocaml = _pkg.ocaml;
+        packages.native = _pkg.native;
+        packages.fsharp = _pkg.fsharp;
+        packages.cli = _pkg.cli;
 
         apps = {
-          default = flake-utils.lib.mkApp { drv = self.packages.${system}.fstar-example-cli; };
+          default = flake-utils.lib.mkApp { drv = self.packages.${system}.cli; };
         };
 
         devShells.default = pkgs.mkShell {
@@ -170,10 +177,9 @@
           3. nix build
 
           - Build everything: nix build \
-              .#fstar-example-checked .#fstar-example-ocaml \
-              .#fstar-example-native .#fstar-example-cli
+              .#checked .#ocaml .#native .#cli
           - Dev loop:   nix develop && make check
-          - Run the CLI: nix run .#fstar-example-cli
+          - Run the CLI: nix run .#cli
         '';
       };
     };

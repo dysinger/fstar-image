@@ -27,6 +27,22 @@ module Seq = FStar.Seq
 (** The element type: a 32-bit unsigned word (e.g. a voter's candidate id). *)
 type elem = U32.t
 
+(** The *extracted* result of a candidate pass: either there is no majority
+    candidate (the sequence was empty) or a surviving candidate.  This is an
+    F*-defined variant (not the stdlib [option]), so Custard's F# backend has
+    a realization for it — the stdlib [option] is hand-written OCaml with no
+    F# counterpart.  [vote_result_of_option] bridges the concise pure spec
+    ([Majority.find_candidate] : [option elem]) to this extractable form. *)
+noeq type vote_result =
+  | VR_NoMajority
+  | VR_Majority: (cand: elem) -> vote_result
+
+(** Bridges the pure [option] spec to the extractable [vote_result]. *)
+let vote_result_of_option (o: option elem) : vote_result =
+  match o with
+  | None -> VR_NoMajority
+  | Some c -> VR_Majority c
+
 (** [count x s] — the number of occurrences of [x] in [s]. *)
 let count (x: elem) (s: Seq.seq elem) : nat =
   List.Tot.count x (Seq.seq_to_list s)

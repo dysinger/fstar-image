@@ -3,225 +3,204 @@
 Copyright 2026 Department of Code LLC.
 SPDX-License-Identifier: AGPL-3.0-or-later
 
+A minimal, self-contained [F*](https://www.fstar-lang.org/) project that
+demonstrates the full verified-to-runnable workflow: a four-module
+Boyer–Moore majority-vote library (pure spec + pure algorithm + Pulse leaf +
+CLI) is checked, extracted via **Custard**, and compiled to **C** (a native
+library and a standalone executable) and **OCaml** — all driven by
+[Nix flakes](https://nixos.wiki/wiki/Flakes).
+
+This is the post-KaRaMeL era of F\* (`v2026.09.20+lsp`): the Low\*/KaRaMeL
+stdlib was removed upstream and replaced by **Pulse** + **Custard**.  There is
+no `krml`, no `rust`/`wasm` backend, and no `Stack`/`HyperStack` effect.
+
 ## Getting started
 
 ```bash
 # 1. Initialize a new F* project (copies the template into the current dir).
 nix flake init -t github:dysinger/fstar-nix-flake-template
 
-# 2. Name it: rename src/Example.fst -> src/<Name>.fst, its `module Example`
-#    header, the pname in default.nix, and the literal names in flake.nix
-#    (see "Extending -> Rename the module").
+# 2. Rename it (see "Renaming" below): rename the module files, their
+#    `module X` headers, and the `pname` in default.nix.
 
-# 3. Build it.
-nix build
+# 3. Build everything.
+nix build \
+  .#checked .#ocaml .#native .#fsharp .#cli
 
-# 4. Drop into the dev loop (fstar.exe, krml, OCaml LSP already on PATH).
+# 4. Run the CLI.
+nix run .#cli     # exits 0
+
+# 5. Drop into the dev loop (fstar.exe + OCaml LSP on PATH).
 nix develop
 ```
 
----
-
-A minimal, self-contained [F*](https://www.fstar-lang.org/) project that
-demonstrates the full verified-to-runnable workflow: a single verified module
-is checked, extracted via KaRaMeL, and compiled to **C** (native executable,
-shared library), **Rust**, **OCaml**, and **WebAssembly** — all driven by
-[Nix flakes](https://nixos.wiki/wiki/Flakes).
-
-The build is three layers, one per environment:
+## The three build layers
 
 | File | Responsibility | Works without flakes? |
 |------|----------------|-----------------------|
 | `flake.nix` | inputs/outputs + `devShell` only | no (needs flakes) |
-| `default.nix` | builds the targets (all of them) | yes (`nix-build` / `import`) |
-| `Makefile` | the shell-script build (module order) | yes (plain `fstar`/`karamel` on PATH) |
+| `default.nix` | builds every target | yes (`nix-build` / `import`) |
+| `Makefile` | the shell build (module order + flags) | yes (plain `fstar.exe` on PATH) |
 
-The nixpkgs overlay (in `flake.nix`) builds `fstar`, `karamel`,
-`fstar-checked`, and `fstar-krml` from the pinned forks; the flake passes them
-to `default.nix` by named argument.  `default.nix` delegates verification and
-extraction to the `Makefile` (`make check` / `make krml` / `make exe`), which
+The nixpkgs overlay (in `flake.nix`) builds `fstar` and `fstar-checked` from
+the pinned fork; the flake passes them to `default.nix` by named argument.
+`default.nix` delegates verification to the `Makefile` (`make check`), which
 owns the module list and its dependency order.  The editor LSP
 (`fstar.exe --lsp`) is a dev-loop aid only — `nix build` is the verification
 gate.
 
 ## What the template demonstrates
 
-`src/Example.fst` is a small verified module with three layers:
+The example is a **Boyer–Moore majority-vote** algorithm — the canonical
+linear-time, constant-space scan for a sequence's majority element — split into
+four layers, mirroring the `fstar-codec` Types / Codec / Pulse split:
 
-| Layer | Contents | Effect | Purpose |
-|-------|----------|--------|---------|
-| Operations | `add`, `xor`, `zero` | `Tot` (pure) | Extractable byte helpers |
-| Proofs | `lemma_add_commutes`, `lemma_xor_involutive` | `Lemma` (ghost) | Verified properties, erased before extraction |
-| Entry point | `main` | `St` (stateful) | Runnable entry, exercises the verified operations |
+| Module | Layer | Effect | Purpose |
+|--------|-------|--------|---------|
+| `Majority.Types` | pure spec | `Tot` | `elem`/`count`/`majority` + `lemma_count_empty` |
+| `Majority` | pure algorithm | `Tot` | `candidate_step`/`bm_scan`/`find_candidate` + lemmas |
+| `Majority.Pulse` | Pulse leaf | `stt` (`fn`) | `majority_vote` over a mutable array, C/OCaml extractable |
+| `Main` | CLI entry | `stt` (`fn`) | allocates a static vote table, runs the leaf, returns exit status |
 
-- `lemma_add_commutes` proves `add a b == add b a` (byte addition commutes).
-- `lemma_xor_involutive` proves `xor (xor a b) b == a` (XOR is its own inverse),
-  forwarding to the standard library lemma `FStar.UInt.logxor_inv`.
-- `main` calls the verified `add`/`xor` and returns the exit code `0`.  It does
-  **not** call the lemmas: lemmas are compile-time proofs, erased before C
-  extraction, so a runnable entry point uses the verified *operations*.
+- `Majority.Types` defines the mathematical notion `majority x s` (an element
+  occurring strictly more than half the time) and proves `lemma_count_empty`.
+- `Majority` implements `find_candidate` — the Boyer–Moore candidate-selection
+  pass — and `verify` (the verification pass).  It also carries the *proven*
+  bridge lemmas the Pulse leaf relies on: `candidate_step_u32` (the extractable
+  `U32.t`-counter form of the one-step transition), `bm_scan` (the fold by
+  index), `lemma_bm_scan_step`, and `lemma_find_candidate_slice`.
+- `Majority.Pulse` re-implements the same scan over a
+  `Pulse.Lib.Array.array U32.t` with a `while` loop, and its post-condition ties
+  the surviving candidate back to `Majority.find_candidate` — the spec↔impl
+  correspondence is discharged by the pure lemmas.
+- `Main` binds a *static* vote table (`Pulse.Lib.GlobalArray`, a compile-time
+  constant) and calls `majority_vote`; Custard compiles it with
+  `--custard_main Main.main` into a standalone C program whose exit status
+  reports whether the scan found the expected winner.
 
-The module verifies with **zero admits** — every lemma discharges through SMT
-or a standard-library lemma.
+Everything verifies with **zero admits** — every lemma discharges through SMT
+or a hand-written proof in `Majority.fst`.
 
 ## Prerequisites
 
 [Nix](https://nixos.org/download/) with flakes enabled, plus an internet
-connection to fetch `nixpkgs`, `fstar`, and `karamel`.
+connection to fetch `nixpkgs` and the pinned `fstar` fork.
 
 ## Layout
 
 ```
 .
 ├── flake.nix          # inputs/outputs + devShell (flakes only)
-├── default.nix        # builds every target (checked/krml/exe/native/rust/ocaml/wasm)
+├── default.nix        # builds every target (checked/ocaml/native/fsharp/cli)
 ├── Makefile           # the no-nix shell build (owns module order)
 └── src/
-    └── Example.fst    # The verified F* example module (extracts to C / OCaml / Rust / ...)
+    ├── Majority.Types.fst     # pure spec
+    ├── Majority.fst           # pure algorithm + lemmas
+    ├── Majority.Pulse.fst     # Pulse leaf (C/OCaml extractable)
+    └── Main.fst               # CLI entry point (--custard_main)
 ```
-
-(The native C driver `main.c` is **generated** by the `-exe` derivation from
-the KaRaMeL-emitted header — see "How the entry points work" below — so there
-is no checked-in `src/main.c` and no hand-edited `<Module>_main` symbol.)
 
 ## Targets
 
 | Flake attribute | What it produces | Runnable? |
 |-----------------|------------------|-----------|
-| `.#fstar-example-checked` | F\* verification (`Example.fst.checked` + stdlib `.checked` cache) | no |
-| `.#fstar-example-krml` | KaRaMeL extraction (`Example.krml` — intermediate IR) | no |
-| `.#fstar-example-exe` | Native executable (`bin/fstar-example`) | **yes** |
-| `.#fstar-example-native` | Native C library (`libfstar-example.so` + `Example.h`) | no |
-| `.#fstar-example-rust` | Rust library (`libfstar-example.rlib`) | no |
-| `.#fstar-example-ocaml` | OCaml findlib package (`fstar-example.cmxa` + `fstar-example.cmi`) | no |
-| `.#fstar-example-wasm` | WebAssembly module + JS loader bundle | **yes** |
+| `.#checked` | F\* verification (`.checked` files, 0-admit) | no |
+| `.#ocaml` | OCaml findlib package (`fstar-example.cmxa`) | no |
+| `.#native` | C11 shared/static lib (`libfstar-example.{dylib,so,a}` + `.h`) | no |
+| `.#fsharp` | .NET library assembly (`Custard.dll`) | no |
+| `.#cli` | standalone C executable (`bin/fstar-example-cli`) | **yes** |
 
-`nix build` with no argument builds the default package (`fstar-example-krml`).
+`nix build` with no argument builds the default package (`native`).
 
-Every supported F* extraction target has a flake attribute:
+Each backend maps to one extraction mode (the same set `fstar-codec` ships,
+plus the CLI):
 
-| System | Backend | Attribute | Output |
-|--------|---------|-----------|--------|
-| F* `fstar.exe --codegen` | `OCaml` | `.#fstar-example-ocaml` | `fstar-example.cmxa` (findlib pkg) |
-| F* `fstar.exe --codegen` | `krml` | `.#fstar-example-krml` | `.krml` (IR) |
-| KaRaMeL `krml -backend` | `c` | `.#fstar-example-native` | `libfstar-example.so` + `.h` |
-| KaRaMeL `krml -backend` | `rust` | `.#fstar-example-rust` | `libfstar-example.rlib` |
-| KaRaMeL `krml -backend` | `wasm` | `.#fstar-example-wasm` | `Example.wasm` |
+| Backend | Mechanism | Attribute | Output |
+|---------|-----------|-----------|--------|
+| F\* verify | `fstar.exe` (0-admit gate) | `.#checked` | `.checked` cache |
+| OCaml | `--codegen OCaml` (pure) + `--custard_backend OCaml` (Pulse) | `.#ocaml` | findlib package |
+| C library | `--codegen Custard --custard_backend C` | `.#native` | `libfstar-example.*` + `.h` |
+| F# library | `--codegen Custard --custard_backend FSharp` | `.#fsharp` | .NET assembly |
+| C executable | Custard + `--custard_main Main.main` | `.#cli` | `bin/fstar-example-cli` |
 
-### Why there is no F# target
+The runtime backends exercise the Custard split exactly like `fstar-codec`:
 
-`fstar.exe --codegen FSharp` exists and emits a `.fs` file, but this template
-**deliberately omits it**.  F*'s own repository marks the F# path as
-unmaintained:
+- **OCaml** extracts the *pure spec* (`Majority.Types` + `Majority` via
+  `--codegen OCaml`) *and* the Pulse leaf (`Majority.Pulse` via
+  `--custard_backend OCaml`) as one dune library.
+- **native (C)** extracts the *Pulse leaf* (`Majority.Pulse`, whose runtime
+  body stays in `U32.t` + `Pulse.Lib.Array` + Pulse primitives) via Custard's
+  `--custard_backend C`, rooted at `--custard_entry Majority.Pulse.majority_vote`.
+- **fsharp** extracts the same Pulse leaf via `--custard_backend FSharp` and
+  builds it with `dotnet`.
+- **cli** extracts `Main` the same way but roots `--custard_main Main.main`, so
+  Custard emits a standalone `main` that calls the leaf.  (This is the one
+  addition over `fstar-codec`, which has no CLI.)
 
-- its `fsharp/README` says the F# runtime is *"currently not tested by anything
-  in this repository"*; and
-- its `examples/hello/README.md` says *"None of this worked for me. I am
-  disabling this directory for now."*
+> To keep the Pulse leaf extractable in *all three* backends, its result type
+> is the F\*-defined variant [Majority.Types.vote_result] (not the stdlib
+> `option`/`tuple`, which are hand-written OCaml with no F# realization —
+> Error 395).  See the Pulse-idiom note under "Extending".
 
-Beyond that, the backend is effectively unbuildable with the current
-`fstar`/`karamel` inputs:
+### Dropped backends
 
-1. **No packaged runtime.**  F* ships an F# runtime only as *source* under
-   `fsharp/base/` (`Prims.fs`, `FStar_UInt8.fs`, `FStar_Int32.fs`, ...); that
-   directory is not installed into the `fstar` derivation, so the symbols the
-   extracted `.fs` references (`FStar_UInt8`, `FStar_Int32`, `Prims`) have no
-   `.dll` to link against.
-2. **Codegen/literal mismatch.**  `string_of_mlconstant` in
-   `FStarC.Extraction.ML.Code.fst` emits bare `int` literals (e.g. `0x00`) for
-   `Int8` constants, while the unshipped `FStar_UInt8.fs` realizes `uint8` as
-   `Prims.int` (= `bigint`).  The extracted output does not typecheck against
-   its own runtime.
-3. **Deprecated syntax.**  The codegen emits `#light "off"` (deprecated since
-   F# 2.0), which requires `--mlcompatibility`; even then the above mismatch
-   remains.
-
-If upstream F* later ships a supported F# backend + runtime, add a
-`fstar-example-fsharp` derivation mirroring the `fstar-example-ocaml` shape (extract `--codegen
-FSharp`, then `dotnet build` against the runtime).  Until then, no F# target.
+Custard's `--custard_backend` enum is `["OCaml"; "FSharp"; "KrmlC";
+"KrmlRust"; "C"]`.  The two `Krml*` entries route through the removed
+KaRaMeL toolchain and are dead upstream (`KrmlRust` produces 431 rustc errors;
+`KrmlC` is superseded by the direct `C` backend) — dropped, matching
+`fstar-codec`.  There is no wasm backend in the new F\*.
 
 ## Build everything
 
 ```bash
 nix build \
-  .#fstar-example-checked .#fstar-example-krml .#fstar-example-exe .#fstar-example-native \
-  .#fstar-example-rust .#fstar-example-ocaml .#fstar-example-wasm
+  .#checked .#ocaml .#native .#fsharp .#cli
 ```
 
-## Run the native executable
+## Run the CLI
 
 ```bash
-nix build .#fstar-example-exe
-./result/bin/fstar-example
+nix run .#cli
 echo $?   # -> 0
 ```
 
-The executable links the verified module through a small C driver that the
-`-exe` derivation **generates** from the KaRaMeL-emitted `Example.h` header
-(which declares the exact `Example_main` prototype).  The driver calls
-`Example_main` (the extracted form of `Example.main`, which exercises the
-verified operations) and forwards its exit code (`0`) to the process.  It
-performs no I/O.
-
-## Run the WebAssembly module
-
-```bash
-nix build .#fstar-example-wasm
-cd result
-node main.js
-# ... main found in module Example
-# ... done running main
-```
-
-The wasm backend emits `Example.wasm` (exporting the verified `add`, `xor`, and
-the `main` entry point) plus a small KaRaMeL JS loader bundle (`main.js`,
-`loader.js`, `shell.js`, `browser.js`, `main.html`, `layouts.json`, plus a
-`README` file with no extension).  `node main.js` instantiates the module
-and invokes `main`; it exits `0` on success.  To run it in a browser, serve the
-directory over HTTP and open `main.html`.
-
-> **Note:** the F\* module is pure verified computation — `main` exercises the
-> proven operations and returns an exit code; it performs no I/O, and neither
-> does the native driver.  Both targets run the same verified `main` and exit
-> `0` without printing.
+The generated C program links the `Majority.Pulse.majority_vote` entry point
+through `--custard_main Main.main`: Custard emits an `int main(void)` that
+invokes `Main.main`, which runs the Boyer–Moore scan over a static vote table
+and returns `0` when the expected majority element (`2`) is found.  It performs
+no I/O; the exit status is the whole observable behaviour.
 
 ## Verify and extract individually
 
 ```bash
-nix build .#fstar-example-checked   # F* verification only (no extraction)
-nix build .#fstar-example-krml      # KaRaMeL extraction only (depends on checked)
+nix build .#checked   # F* verification only (no extraction)
+nix build .#native    # extract the Pulse leaf to C11
+nix build .#fsharp    # extract the Pulse leaf to F# -> .NET assembly
+nix build .#cli       # extract Main to a standalone C program
 ```
 
-`fstar-example-checked` emits a directory containing `Example.fst.checked` *plus* the
-~421 pre-verified standard-library `.checked` files (the downstream
-verification cache).  Your module's `.checked` is the one named
-`Example.fst.checked`.
+`.#checked` emits a directory containing the `.checked` files for
+`Majority.Types`, `Majority`, `Majority.Pulse`, and `Main`, plus the
+~330 pre-verified standard-library `.checked` cache they were verified against.
 
 ## Dev loop (`nix develop` + Makefile)
 
 ```bash
-nix develop        # drops you in a shell with fstar.exe, kramel, python, OCaml LSP
-make check         # verify
-make krml          # extract to out/krml/*.krml
-make exe           # emit C, compile, link -> out/fstar-example
+nix develop        # drops you into a shell with fstar.exe + OCaml LSP
+make check         # verify all four modules (0-admit)
 make clean
 ```
 
 For fast interactive checking use the editor LSP (`fstar.exe --lsp`, see
 below) — the LSP is a dev-loop aid, not a second build system.  The `nix build
-.#fstar-example-checked` run (with a Z3 resource limit) is the authoritative
-gate.
+.#checked` run (with a Z3 resource limit) is the authoritative gate.
 
-The `nix develop` devShell exports the environment the `Makefile` (and the
-`-exe`/`-native` derivations and a manual `fstar.exe`/`krml` invocation) need:
+The `nix develop` devShell exports one environment variable the `Makefile`
+needs:
 
 | Variable | Purpose |
 |----------|---------|
-| `FSTAR_KRML` | krmllib runtime `.krml` (for the native C link) |
-| `FSTAR_CHECKED` | pre-verified stdlib `.checked` cache |
-| `KRML_HOME` | KaRaMeL home (krmllib, include headers) |
-| `KRM_LIB` | krmllib directory |
-| `KRM_INC` | C include flags for the generated code |
+| `FSTAR_CHECKED` | pre-verified stdlib `.checked` cache (from the `fstar` install) |
 
 ## LSP
 
@@ -229,138 +208,68 @@ The `nix develop` devShell exports the environment the `Makefile` (and the
 Vim) at it for hover docs, diagnostics, and completions.
 
 > The editor LSP is a **dev-loop aid, not the verification gate** — the
-> `nix build .#fstar-example-checked` run (with a Z3 resource limit) is the source of
-> truth.
+> `nix build .#checked` run (with a Z3 resource limit) is the source of truth.
 
 ## Extending
 
-- **Edit the logic** — modify `src/Example.fst` with your own verified functions,
-  lemmas, and `main`.
-- **Rename the module** (optional) — the verified module is a generic
-  placeholder named `Example`.  To rename it, do two things together:
-  rename `src/Example.fst` → `src/<Mod>.fst` and change its `module Example`
-  header → `module <Mod>`.  The `Makefile` and `default.nix` discover the
-  module name from the source tree, so no nix argument needs editing.  The
-  C entry symbol (`<Module>_main`) needs no hand-edit — the `Makefile` (and the
-  `-exe` derivation) generate `main.c` from the KaRaMeL-emitted header.
-  (Renaming the *project* — `pname` — is separate: edit `pname` in
-  `default.nix` and the literal flake attribute names in `flake.nix` to
-  match.)
+- **Edit the logic** — modify the `Majority.*` modules with your own verified
+  functions, lemmas, and scan; the `Main` module is the thin CLI wrapper.
+- **Rename the module** (optional) — rename `src/Majority.Types.fst` etc. and
+  their `module Majority.Types` headers; the `Makefile`'s `SRC_MODS` and
+  `default.nix`'s module lists carry the order.  The Custard entry symbols
+  (`--custard_entry Majority.Pulse.majority_vote`, `--custard_main Main.main`)
+  follow the module names, so keep them in sync.
 - **Add more modules** — list them (in dependency order, leaf modules first) in
-  the `Makefile`'s `SRC_MODS` (the Makefile owns module order); a plain
-  alphabetical `sort` would verify a dependent module before its leaf and
-  trigger F* Warning 247.
-- **Ship a library instead of an exe** — drop the `make exe` target and the
-  `${pname}-exe` derivation; the `${pname}-krml` output is the library's
-  extracted `.krml`/C.  When the package has `.Low` modules, `make krml` (and
-  the `default.nix` `krml` derivation) extract only those `.Low` modules
-  automatically; a plain extractable module with no `.Low` (like `Example`)
-  extracts as itself.
+  the `Makefile`'s `SRC_MODS`; a plain alphabetical `sort` would verify a
+  dependent module before its leaf and trigger F\* Warning 247.
+- **Ship a library instead of a CLI** — drop the `cli` derivation (and
+  `--custard_main Main.main`); the `native` derivation (`--custard_entry`) is
+  already the "library" shape, exposing a C entry point for a hand-written
+  host.
 
-Module naming: this example is a *plain extractable* module (`module Example`).
-For stateful Low\* code (heap buffers, `Stack` effects), the ecosystem
-convention is a `*.Low` suffix plus a two-layer spec/impl split.  A namespaced
-module (`module Data.Codec.Types`) is fully supported: F\* preserves the dots
-in the `.fst.checked` cache filename (`Data.Codec.Types.fst.checked`) while the
-KaRaMeL extraction name turns dots into underscores (`Data_Codec_Types.krml`).
+### Renaming the project
 
-## How the entry points work
+`nix flake init -t .` copies the repository root.  To rename the example,
+edit one `pname` binding in `default.nix` (it flows into the package names and
+the library artifacts), and rename the four `src/*.fst` files + their
+`module ...` headers.  The flake attributes are named by deliverable with no
+project prefix (`checked`/`ocaml`/`native`/`fsharp`/`cli`), so they need no
+renaming.
 
-This section explains the mechanics behind the three artifacts (`main.c`,
-`.wasm`, and the JS loader bundle), so a reader can see *why* the native and
-wasm paths differ.
+### The Pulse idiom (pinned here)
 
-### The module has one `main` — the two targets consume it differently
+The `Majority.Pulse` leaf followed the `fstar-codec` pattern and is worth
+imitating closely:
 
-`src/Example.fst` defines a single `main : unit -> St Int32.t` function.  All
-three targets run *that same verified function*; they differ only in **who
-supplies the surrounding runtime** that calls it and hands back the exit code.
-
-| Target | Who supplies the entry point | What runs it |
-|--------|------------------------------|--------------|
-| `fstar-example-exe` | generated `main.c` (from `Example.h`) | The OS / libc (`_start` → `main`) |
-| `fstar-example-wasm` | KaRaMeL (exports a function named `main`) | The generated JS loader (`main.js`) |
-
-### Why the native (POSIX) target needs `main.c`
-
-KaRaMeL's C backend extracts `Example.main` to a C function `Example_main()` in the
-generated `Example.c`, but it **deliberately does not emit a C `main()`**.  There
-are two reasons:
-
-1. KaRaMeL can't know how *your* program wants to wire I/O, `argc`/`argv`, or
-   integrations with other host code.
-2. There is often no single `main` — the extracted module may be a **library**
-   whose whole purpose is to be called by *your* host program.
-
-On a real OS the C toolchain already provides the runtime entry point
-(`_start` → `__libc_start_main` → `main`), so KaRaMeL's job is only to produce
-portable C; the boundary is "KaRaMeL gives you the library, the platform gives
-you `main`."  The `-exe` derivation generates that two-line bridge for this
-template (from the `<Module>_main` prototype in the emitted header): it calls
-`Example_main()` and forwards its exit code.
-
-```c
-#include "Example.h"
-
-int main(void) {
-  return (int)Example_main();
-}
-```
-
-### Why the wasm target does *not* need `main.c`
-
-A wasm module is just a bag of imports and exports — there is **no OS, no
-libc, no `_start`, and no caller** that already knows to run `main`.  So
-KaRaMeL's wasm backend *must* own the entire runtime, entry point included:
-
-- It exports the extracted `Example.main` as a wasm function literally named
-  `main` (visible in the loader log as `Example exports ... main ...`) — this is
-  what the `-no-prefix Example` flag in the `-wasm` derivation (in `default.nix`)
-  does: it strips the `<Module>_` prefix so the export is `main` rather than
-  `Example_main`, which is the name `main.js` searches for.
-- It generates a JS loader bundle (`main.js`, `loader.js`, `shell.js`,
-  `browser.js`, `main.html`, `layouts.json`) that instantiates the module,
-  wires up the imports (memory, `malloc`, etc.), finds the `main` export,
-  invokes it, and propagates the exit code.
-
-Because KaRaMeL provides *both* the entry-point convention *and* the caller in
-the wasm world, no C driver is needed.  You only need the `.wasm` file plus the
-JS loader to run it:
-
-```bash
-nix build .#fstar-example-wasm
-cd result && node main.js   # ... main found in module Example
-                            # ... done running main
-```
-
-This split is not KaRaMeL-specific.  Emscripten does the same: a native
-`main()` becomes a wasm export and Emscripten generates a JS shim to call it,
-because the two worlds have different entry-point rules.
-
-### Proving wasm was generated (without the loader)
-
-`main.js` is only needed to *execute* the module.  To simply confirm that valid
-wasm was produced, the `.wasm` file is sufficient:
-
-```bash
-head -c4 result/Example.wasm | xxd      # 00000000: 0061 736d  (".asm" magic)
-file result/Example.wasm                # WebAssembly (wasm) binary module ...
-# or validate it:
-nix shell nixpkgs#nodejs_22 -c node -e \
-  'console.log(WebAssembly.validate(new Uint8Array(require("fs").readFileSync("result/Example.wasm"))))'
-```
-
-The KaRaMeL wasm backend also emits a human-readable `Example.wast` alongside the
-binary if you want to inspect the module textually.
+- **Array**: `A.array U32.t` (`Pulse.Lib.Array`), view `A.pts_to b s`
+  (`s : Seq.seq U32.t` erased).  Read `b.(j)`, with `j : SizeT.t`; convert
+  `U32.t` offsets with `US.uint32_to_sizet`.
+- **Loops**: the native Pulse `while` loop with an `exists*` invariant naming
+  the per-iteration state (here, `candidate`/`counter`/`index`) and a `pure`
+  fact tying it to the pure spec fold.  The loop is a `divergent` computation,
+  so any `fn` containing one must be marked `divergent`.
+- **Spec tie-in**: the loop invariant expresses the *suffix* scan
+  (`bm_scan s0 (U32.v i) (U32.v n) vc (U32.v vcc)`) rather than re-deriving the
+  prefix from scratch each iteration; the one-step unfold is a pure lemma
+  (`lemma_bm_scan_step`) with an SMTPat, and the final candidate is tied to
+  `find_candidate` by `lemma_find_candidate_slice`.
+- **Extraction-safety**: the runtime body stays in `U32.t` + array + Pulse
+  primitives; `Seq`/`nat`/`list` appear only in erased specs and `Lemma`s,
+  never in extracted bodies (Error 368 otherwise).
+- **F#-extractability**: the leaf's result type must be an F\*-defined variant
+  (here [Majority.Types.vote_result]), not the stdlib `option`/`tuple` — those
+  are hand-written OCaml with no F# realization and Fail with Error 395 when
+  reached from a rooted entry point.  `fstar-codec` does the same
+  (`decode_result_c`, `DR_Inl`/`DR_Inr`).
 
 ## Notes
 
-- The `fstar` and `karamel` inputs are pinned to
-  [`dysinger/fstar`](https://github.com/dysinger/fstar) (LSP-enabled build) and
-  [`dysinger/karamel`](https://github.com/dysinger/karamel) (the `coextract`
-  branch) — forks carrying patches not yet upstream.  For production you may
-  prefer upstream `FStarLang/FStar` + `FStarLang/karamel` releases.
+- The `fstar` input is pinned to
+  [`dysinger/fstar`](https://github.com/dysinger/fstar) (the `v2026.09.20+lsp`
+  branch — the LSP-enabled build of the first stable Custard release).  The
+  KaRaMeL install step is neutralized in the overlay (no `krml` is consumed),
+  exactly as in `fstar-codec`.
 
 ## License
 
-[CC-BY-4.0](LICENSE).
+[AGPL-3.0-or-later](LICENSE).

@@ -13,23 +13,51 @@ extraction tutorial problem).
 spin) is a hang — kill + diagnose, don't wait.  `nix build` is the gate, not
 the LSP.
 
-## Phase 1 — Roll the toolchain forward (delete KaRaMeL)
+> ### Status snapshot (buttoned up, end of THIS session)
+>
+> **DONE:** Phase 1 (Karamel removal + roll-forward, commit `57c61d8`) and the
+> **two pure modules** `Majority.Types` + `Majority` (0-admit, verified GREEN).
+>
+> **Architecture note (the three-backend split — same as fstar-codec):**
+> `Tot` is FINE everywhere and is the xeno convention (1096 uses, incl. the
+> codec spec).  It does NOT block extraction.  What blocks C/F# is *pure types*
+> (`Seq`/`list`/`nat`/`int`) in runtime bodies:
+> - `Majority.Types` + `Majority` (pure, `Seq`/`list`/`nat`) → **OCaml** only,
+>   via `--codegen OCaml`.
+> - `Majority.Pulse` (`fn`, `A.array U32.t`) → **C + OCaml + F#** via Custard.
+>   Its *spec* may use `Seq`/`find_candidate` (erased in the `ensures`), but its
+>   *runtime body* must stay in `U32.t` + `A.array` + Pulse primitives.
+>
+> **NEXT SESSION (in order):**
+> 1. **T2.3** — implement the real `Majority.Pulse` loop (currently a stub).
+>    Use the fstar-codec technique: `fn` + `A.pts_to b s0` view, `Tot (option
+>    elem)` with a *bare-variable* `decreases` (`decreases ls`), NOT
+>    `decreases (n - i)`.  (The xeno codebase does use arithmetic `decreases
+>    m + 1 - k`, so if that form errors, it's the v2026.09.20 parse — prefer
+>    the bare-variable / list-subterm form from fstar-codec.)
+> 2. **T2.4 + Phase 3** — write `Main` (CLI) and confirm the `cli` derivation
+>    (already wired in `default.nix`/`flake.nix`) extracts the executable.
+> 3. **Phase 4** — README/AGENTS rewrite, full `nix build .#checked .#ocaml
+>    .#native .#cli` + `nix run .#fstar-example-cli`, `nix flake init -t .`
+>    smoke test.
 
-- [ ] **T1.1 — Drop the `karamel` input + all its artifacts.**  Remove from
+## Phase 1 — Roll the toolchain forward (delete KaRaMeL) — ✅ DONE
+
+- [x] **T1.1 — Drop the `karamel` input + all its artifacts.**  Remove from
       `flake.nix`: the `karamel` flake input, the `karamel` / `fstar-krml`
       overlay derivations, `KRM_LIB`/`KRM_INC`/`KRML_HOME`/`FSTAR_KRML` env
       plumbing, the `gtime` shim.  Keep only `fstar` + `fstar-checked`.
-- [ ] **T1.2 — Pin `fstar` to `github:dysinger/fstar/v2026.09.20+lsp`.**
+- [x] **T1.2 — Pin `fstar` to `github:dysinger/fstar/v2026.09.20+lsp`.**
       Add the `buildPhase`/`installPhase` overrides from `fstar-codec`
       (`--z3rlimit 20 --retry 3` bootstrap; the no-op `karamel/Makefile` +
       `FSTAR_USE_KRML_EXE=1` stub); `ocamlPackages = ocaml-ng.ocamlPackages_5_3`.
-- [ ] **T1.3 — Delete the dead backends.**  Remove `krml`/`rust`/`wasm`/
+- [x] **T1.3 — Delete the dead backends.**  Remove `krml`/`rust`/`wasm`/
       `native`(KaRaMeL C)/`exe`(KaRaMeL driver) derivations from `default.nix`
       and their Makefile targets.  The new backends are `checked` +
       `ocaml`(pure spec) + `native`(Custard C of the Pulse leaf) + `cli`
       (a packaged command-line executable) + `fsharp` (optional, parallel to
       fstar-codec).
-- [ ] **T1.4 — Rewrite the Makefile** for the Custard/Pulse era: no `KRML_*`
+- [x] **T1.4 — Rewrite the Makefile** for the Custard/Pulse era: no `KRML_*`
       guards, `--z3rlimit 120`, the four `pulse/*` `--include` paths, and an
       explicit `SRC_MODS` (not the alphabetical glob — leaf-first order).
 
@@ -37,23 +65,21 @@ the LSP.
 
 The new shape (modeled on fstar-codec's Types/Codec/Pulse split):
 
-- [ ] **T2.1 — `Majority.Types`** (pure spec + types).  The `majority_vote`
-      pure spec: majority element of a sequence (Boyer–Moore candidate /
-      count verification), the well-formedness/bounds types, and the
-      roundtrip/correctness lemmas (the "is this element a majority" property).
-- [ ] **T2.2 — `Majority`** (pure spec facade / lemmas).  The Boyer–Moore
-      algorithm as pure functions (`find_candidate`, `verify_majority`), with
-      lemmas proving the algorithm's loop invariant (after a full pass, the
-      surviving candidate is the only possible majority).
-- [ ] **T2.3 — `Majority.Pulse`** (`#lang-pulse`) — the lower-level Pulse
-      leaf: `majority_vote` over a `Pulse.Lib.Array.array U32.t`, the
-      `pts_to` buffer view, `encode`/`decode`-style postconditions tying the
-      Pulse result to the pure spec, a roundtrip lemma, extraction via Custard
-      `--custard_backend C`.
-- [ ] **T2.4 — `CLI`** (or `Main`) — a `main : unit -> Int32.t` entry point
-      that runs the Boyer–Moore vote on a fixed input array and returns an
-      exit code; extracted to C and packaged as a command-line executable via
-      a `cli` derivation.
+- [x] **T2.1 — `Majority.Types`** (pure spec + types) — ✅ DONE, 0-admit.
+  `elem`/`count`/`majority` + `lemma_count_empty`, verified GREEN this session.
+- [x] **T2.2 — `Majority`** (pure algorithm) — ✅ DONE (mostly), 0-admit.
+  `candidate_step`/`find_candidate`/`verify` verified GREEN.  **NOTE:** the
+  deep "candidate is the only possible majority" invariant is *stated in
+  prose* + exercised on vectors, NOT proven symbolically (the pairing proof
+  is the interesting exercise, deliberately left to a reader).
+- [ ] **T2.3 — `Majority.Pulse`** (`#lang-pulse`) — ⚠️ STUB, next session.
+  The file is committed but its `majority_vote` body does NOT scan; it needs
+  a real Pulse `while`/`for` loop with an invariant tying `cand'` to
+  `Majority.find_candidate` over the prefix.  (The `decreases`/`Tot` idiom
+  that works is the fstar-codec form: `: Tot (option elem) (decreases ls)`
+  with a bare variable, NOT `decreases (n - i)` — that syntax is rejected
+  in v2026.09.20.)
+- [ ] **T2.4 — `Main`** (CLI entry point) — not started, next session.
 
 ## Phase 3 — Package the CLI executable
 

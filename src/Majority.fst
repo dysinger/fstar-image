@@ -31,6 +31,7 @@ module Majority
 
 open FStar.Seq
 open FStar.UInt32
+open FStar.List.Tot
 
 module U32 = FStar.UInt32
 module Seq = FStar.Seq
@@ -60,17 +61,17 @@ let candidate_step (cand: elem) (cnt: nat) (x: elem) : elem & nat =
     (see the invariant note above; the implication is exercised concretely in
     the test module). *)
 let find_candidate (s: Seq.seq elem) : option elem =
-  let n = Seq.length s in
-  if n = 0 then None
-  else
-    let rec go (i: nat) (cand: elem) (cnt: nat)
-      : option elem
-      (decreases n - i)
-      = if i = n then Some cand
-        else let cand', cnt' = candidate_step cand cnt (Seq.index s i) in
-             go (i + 1) cand' cnt'
-    in
-    go 1 (Seq.index s 0) 1
+  let rec go (ls: list elem) (cand: elem) (cnt: nat)
+    : Tot (option elem) (decreases ls)
+    = match ls with
+      | [] -> Some cand
+      | x :: tl ->
+        let cand', cnt' = candidate_step cand cnt x in
+        go tl cand' cnt'
+  in
+  match Seq.seq_to_list s with
+  | [] -> None
+  | x :: tl -> go tl x 1
 
 (** [verify x s] — the verification pass: does [x] actually appear more than
     [|s| / 2] times? *)

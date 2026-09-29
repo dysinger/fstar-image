@@ -19,6 +19,7 @@ module Majority.Types
 
 open FStar.Seq
 open FStar.UInt32
+open FStar.List.Tot
 
 module U32 = FStar.UInt32
 module Seq = FStar.Seq
@@ -27,10 +28,8 @@ module Seq = FStar.Seq
 type elem = U32.t
 
 (** [count x s] — the number of occurrences of [x] in [s]. *)
-let rec count (x: elem) (s: Seq.seq elem) : nat =
-  if Seq.length s = 0 then 0
-  else (if Seq.index s (Seq.length s - 1) = x then 1 else 0)
-       + count x (Seq.slice s 0 (Seq.length s - 1))
+let count (x: elem) (s: Seq.seq elem) : nat =
+  List.Tot.count x (Seq.seq_to_list s)
 
 (** [majority x s] — [x] is a majority element of [s]: it occurs strictly
     more than half the time. *)
@@ -39,21 +38,10 @@ let majority (x: elem) (s: Seq.seq elem) : prop =
 
 (** A sequence has at most one majority element (the core uniqueness fact). *)
 
-(** [count x s <= length s] — no element occurs more often than the length. *)
-let rec lemma_count_le_len (x: elem) (s: Seq.seq elem)
-  : Lemma (count x s <= Seq.length s)
-          (decreases Seq.length s)
-  = if Seq.length s = 0 then ()
-    else (
-      lemma_count_le_len x (Seq.slice s 0 (Seq.length s - 1));
-      ()
-    )
-
-(** [count] is monotone in the slice: appending to the right never decreases
-    the count.  (Useful when the Pulse leaf reasons about a prefix scan.) *)
-let rec lemma_count_slice (x: elem) (s: Seq.seq elem)
-  : Lemma (count x (Seq.slice s 0 0) == 0)
-          (decreases Seq.length s)
+(** [count] of the empty sequence is zero (the base case the Pulse leaf
+    starts its scan from). *)
+let lemma_count_empty (x: elem)
+  : Lemma (count x Seq.empty == 0)
   = ()
 
 (** [majority] is a *prop* — proofs about it are erased before extraction.

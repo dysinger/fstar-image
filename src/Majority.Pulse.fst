@@ -1,6 +1,11 @@
 (* Copyright 2026 Department of Code LLC.
    SPDX-License-Identifier: AGPL-3.0-or-later *)
 
+(* ⚠️ TODO(next session) — this Pulse leaf is a STUB.  The `majority_vote` body
+   below does NOT implement the Boyer–Moore scan; it must be completed with a
+   real Pulse `while`/`for` loop whose invariant ties `cand'` to the pure
+   [Majority.find_candidate] over the scanned prefix.  See TASKS.md T2.3. *)
+
 (** Majority.Pulse — the lower-level Pulse leaf of the Boyer–Moore example.
 
     This is the `#lang-pulse` module: [majority_vote] runs the candidate-selection

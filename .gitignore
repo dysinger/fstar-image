@@ -5,30 +5,22 @@
 result
 result-*
 
-# Makefile build output (check/krml/demo all write under out/)
+# Makefile build output (check reads/writes under out/)
 out/
 
-# KaRaMeL wasm output dir (fstar-example-wasm uses `-tmpdir wasm-out`)
-wasm-out/
+# F* `.checked` cache directory (hand-run `fstar.exe --cache_checked_modules`
+# without `--odir` drops the cache in cwd/ `cache/`).
+cache/
 
 # F* `.checked` cache, in case `fstar.exe` is run by hand without `--odir`.
-# (The Makefile and default.nix both pass `--odir`, which routes these into
-# out/ or the nix store — but a bare `fstar.exe` run drops them in cwd.)
 *.checked
 *.krml
 
 # C compiler artifacts, in case `make` or a hand-run compile drops them in cwd.
 *.o
 
-# KaRaMeL wasm/web loader bundle, in case `krml -backend wasm` is run by hand
-# without `-tmpdir` (the fstar-example-wasm derivation routes these into wasm-out/).
-# The extensionless README loader file is ignored ONLY under wasm-out/.
-wasm-out/README
-wasm-out/loader.js
-wasm-out/main.js
-wasm-out/shell.js
-wasm-out/browser.js
-wasm-out/main.html
-wasm-out/layouts.json
-*.wasm
-*.wast
+# Empty scratch dirs
+runtime/
+
+# SMT query dumps from `fstar.exe --log_queries` (hang diagnosis)
+queries-*.smt2

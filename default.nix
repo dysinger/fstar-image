@@ -93,56 +93,59 @@ let
   ocaml-src = mkDerivation {
     name = "${pname}-ocaml-src";
     src = ./.;
-    nativeBuildInputs = [ fstar fstar-checked ];
+    nativeBuildInputs = [
+      fstar
+      fstar-checked
+    ];
     buildPhase = ''
-      export ULIB="${ulib}"
-      mkdir -p $out cache
-      cp ${fstar-checked}/*.checked cache/ 2>/dev/null || true
-      # 1) Extract the pure spec (Example.Majority.Types + Example.Majority) via legacy
-      #    `--codegen OCaml` (one file per invocation, dependency order).
-      for m in ${builtins.concatStringsSep " " pure-modules}; do
-        ${fstar-exe} \
-          --no_default_includes --include "$ULIB" --include ./src \
-          --cache_checked_modules --cache_dir cache --odir cache \
-          src/$m.fst || exit 1
-        ${fstar-exe} \
-          --no_default_includes --include "$ULIB" --include ./src --include cache \
-          --cache_checked_modules --cache_dir cache \
-          --codegen OCaml --odir $out \
-          src/$m.fst || exit 1
-      done
-      # 2) Extract the Pulse leaf (Example.Majority.Pulse), OCaml backend.
-      PULSE_INCS=""
-      for d in ${lib.concatStringsSep " " pulse-incs}; do
-        PULSE_INCS="$PULSE_INCS --include $d"
-      done
-      ${fstar-exe} \
-        --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src \
-        --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
-        --z3rlimit 120 \
-        --cache_checked_modules --cache_dir cache --odir cache \
-        src/Example.Majority.Pulse.fst || exit 1
-      ${fstar-exe} \
-        --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src --include cache \
-        --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
-        --cache_checked_modules --cache_dir cache \
-        --codegen Custard --custard_backend OCaml --custard_monomorphize_types true \
-        --custard_entry Example.Majority.Pulse.majority_vote \
-        --odir $out \
-        src/Example.Majority.Pulse.fst || exit 1
-      # One dune library: pure spec + Pulse leaf together.
-      cat > $out/dune-project <<DUNE_PROJECT
-(lang dune 3.11)
-(name ${pname}-ocaml)
-(package (name ${pname}-ocaml))
-DUNE_PROJECT
-      cat > $out/dune <<DUNE
-(library
- (name ${ocaml-lib-name})
- (public_name ${pname}-ocaml)
- (modules ${builtins.concatStringsSep " " ocaml-modules} Custard)
- (libraries fstar.lib))
-DUNE
+            export ULIB="${ulib}"
+            mkdir -p $out cache
+            cp ${fstar-checked}/*.checked cache/ 2>/dev/null || true
+            # 1) Extract the pure spec (Example.Majority.Types + Example.Majority) via legacy
+            #    `--codegen OCaml` (one file per invocation, dependency order).
+            for m in ${builtins.concatStringsSep " " pure-modules}; do
+              ${fstar-exe} \
+                --no_default_includes --include "$ULIB" --include ./src \
+                --cache_checked_modules --cache_dir cache --odir cache \
+                src/$m.fst || exit 1
+              ${fstar-exe} \
+                --no_default_includes --include "$ULIB" --include ./src --include cache \
+                --cache_checked_modules --cache_dir cache \
+                --codegen OCaml --odir $out \
+                src/$m.fst || exit 1
+            done
+            # 2) Extract the Pulse leaf (Example.Majority.Pulse), OCaml backend.
+            PULSE_INCS=""
+            for d in ${lib.concatStringsSep " " pulse-incs}; do
+              PULSE_INCS="$PULSE_INCS --include $d"
+            done
+            ${fstar-exe} \
+              --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src \
+              --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
+              --z3rlimit 120 \
+              --cache_checked_modules --cache_dir cache --odir cache \
+              src/Example.Majority.Pulse.fst || exit 1
+            ${fstar-exe} \
+              --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src --include cache \
+              --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
+              --cache_checked_modules --cache_dir cache \
+              --codegen Custard --custard_backend OCaml --custard_monomorphize_types true \
+              --custard_entry Example.Majority.Pulse.majority_vote \
+              --odir $out \
+              src/Example.Majority.Pulse.fst || exit 1
+            # One dune library: pure spec + Pulse leaf together.
+            cat > $out/dune-project <<DUNE_PROJECT
+      (lang dune 3.11)
+      (name ${pname}-ocaml)
+      (package (name ${pname}-ocaml))
+      DUNE_PROJECT
+            cat > $out/dune <<DUNE
+      (library
+       (name ${ocaml-lib-name})
+       (public_name ${pname}-ocaml)
+       (modules ${builtins.concatStringsSep " " ocaml-modules} Custard)
+       (libraries fstar.lib))
+      DUNE
     '';
     installPhase = "true";
   };
@@ -171,7 +174,10 @@ DUNE
     pname = "${pname}-native";
     version = "0.1.0";
     src = ./.;
-    nativeBuildInputs = [ fstar fstar-checked ];
+    nativeBuildInputs = [
+      fstar
+      fstar-checked
+    ];
     inherit meta;
     buildPhase = ''
       export ULIB="${ulib}"
@@ -221,7 +227,11 @@ DUNE
     pname = "${pname}-fsharp";
     version = "0.1.0";
     src = ./.;
-    nativeBuildInputs = [ fstar fstar-checked dotnet ];
+    nativeBuildInputs = [
+      fstar
+      fstar-checked
+      dotnet
+    ];
     inherit meta;
     buildPhase = ''
       mkdir -p $out cache src-out
@@ -262,7 +272,11 @@ DUNE
     pname = "${pname}-cli";
     version = "0.1.0";
     src = ./.;
-    nativeBuildInputs = [ fstar fstar-checked stdenv.cc ];
+    nativeBuildInputs = [
+      fstar
+      fstar-checked
+      stdenv.cc
+    ];
     inherit meta;
     buildPhase = ''
       export ULIB="${ulib}"

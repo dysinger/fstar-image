@@ -7,6 +7,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/c31cf09";
     flake-utils.url = "github:numtide/flake-utils";
+    treefmt-nix.url = "github:numtide/treefmt-nix";
     fstar = {
       # Fork of F* with the LSP server ported onto the v2026.09.20 base
       # (first stable tag shipping the Custard extractor).
@@ -25,6 +26,7 @@
       self,
       nixpkgs,
       flake-utils,
+      treefmt-nix,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -125,8 +127,14 @@
           dotnet = dotnet-sdk_10;
         };
 
+        treefmtModule = treefmt-nix.lib.evalModule pkgs ./treefmt.nix;
+
       in
       {
+        formatter = treefmtModule.config.build.wrapper;
+
+        checks.formatting = treefmtModule.config.build.check self;
+
         # The build targets are named by deliverable (no `fstar-example-`
         # prefix), mirroring fstar-codec exactly: `default` aliases `native`
         # (the C11 shared/static lib), plus `checked`/`ocaml`/`fsharp`.
@@ -159,7 +167,8 @@
           ];
         };
       }
-    ) // {
+    )
+    // {
       # Nix flake template (`nix flake init -t .`).  The path is the repository
       # root: `init` copies flake.nix, default.nix, Makefile, src/ directly.
       templates.default = {

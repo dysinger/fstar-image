@@ -1,7 +1,7 @@
 # Copyright 2026 Department of Code LLC.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Minimal verified F* project (library + CLI), Custard/post-KaRaMeL era.
+# Minimal verified F* project (library + CLI), Custard era.
 #
 # Takes the F* toolchain as concrete derivations (no `pkgs` blob, no overlay
 # assumption).  Module names and their dependency order live in the Makefile;

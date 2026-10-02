@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 {
-  description = "Minimal verified F* project template (fstar-example)";
+  description = "Minimal verified F* project template (example)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/c31cf09";
@@ -135,12 +135,12 @@
 
         checks.formatting = treefmtModule.config.build.check self;
 
-        # The build targets are named by deliverable (no `fstar-example-`
-        # prefix), mirroring fstar-codec exactly: `default` aliases `native`
+        # The build targets are named by deliverable (no `example-`
+        # prefix), mirroring codec exactly: `default` aliases `native`
         # (the C11 shared/static lib), plus `checked`/`ocaml`/`fsharp`.
-        # `cli` is the one template-only addition (fstar-codec has no CLI).
+        # `cli` is the one template-only addition (codec has no CLI).
         # Note `native` IS `checked`+`ocaml`+`fsharp`'s sibling; the four
-        # library targets are exactly fstar-codec's set.
+        # library targets are exactly codec's set.
         packages.default = _pkg.native;
         packages.checked = _pkg.checked;
         packages.ocaml = _pkg.ocaml;

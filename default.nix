@@ -36,7 +36,7 @@
 let
   inherit (stdenv) mkDerivation;
 
-  pname = "fstar-example";
+  pname = "example";
 
   pure-modules = [
     "Example.Majority.Types"
@@ -217,7 +217,7 @@ let
 
   # ── F# (.NET) backend ─────────────────────────────────────────────
   #
-  # Same flat pattern as `native`/fstar-codec: verify → extract F# → build
+  # Same flat pattern as `native`/codec: verify → extract F# → build
   # with `dotnet`.  Rooted at the single entry point (majority_vote), which
   # returns `vote_result` (an F*-defined variant, realizable in F#), so no
   # tuple-returning proof

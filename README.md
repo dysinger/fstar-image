@@ -53,7 +53,7 @@ gate.
 
 The example is a **Boyer–Moore majority-vote** algorithm — the canonical
 linear-time, constant-space scan for a sequence's majority element — split into
-four layers, mirroring the `fstar-codec` Types / Codec / Pulse split:
+four layers, mirroring the `codec` Types / Codec / Pulse split:
 
 | Module | Layer | Effect | Purpose |
 |--------|-------|--------|---------|
@@ -105,25 +105,25 @@ connection to fetch `nixpkgs` and the pinned `fstar` fork.
 | Flake attribute | What it produces | Runnable? |
 |-----------------|------------------|-----------|
 | `.#checked` | F\* verification (`.checked` files, 0-admit) | no |
-| `.#ocaml` | OCaml findlib package (`fstar_example.cmxa`) | no |
-| `.#native` | C11 shared/static lib (`libfstar-example.{dylib,so,a}` + `fstar-example.h`) | no |
+| `.#ocaml` | OCaml findlib package (`example.cmxa`) | no |
+| `.#native` | C11 shared/static lib (`libexample.{dylib,so,a}` + `example.h`) | no |
 | `.#fsharp` | .NET library assembly (`Custard.dll`) | no |
-| `.#cli` | standalone C executable (`bin/fstar-example-cli`) | **yes** |
+| `.#cli` | standalone C executable (`bin/example-cli`) | **yes** |
 
 `nix build` with no argument builds the default package (`native`).
 
-Each backend maps to one extraction mode (the same set `fstar-codec` ships,
+Each backend maps to one extraction mode (the same set `codec` ships,
 plus the CLI):
 
 | Backend | Mechanism | Attribute | Output |
 |---------|-----------|-----------|--------|
 | F\* verify | `fstar.exe` (0-admit gate) | `.#checked` | `.checked` cache |
 | OCaml | `--codegen OCaml` (pure) + `--custard_backend OCaml` (Pulse) | `.#ocaml` | findlib package |
-| C library | `--codegen Custard --custard_backend C` | `.#native` | `libfstar-example.*` + `.h` |
+| C library | `--codegen Custard --custard_backend C` | `.#native` | `libexample.*` + `.h` |
 | F# library | `--codegen Custard --custard_backend FSharp` | `.#fsharp` | .NET assembly |
-| C executable | Custard + `--custard_main Example.Majority.CLI.main` | `.#cli` | `bin/fstar-example-cli` |
+| C executable | Custard + `--custard_main Example.Majority.CLI.main` | `.#cli` | `bin/example-cli` |
 
-The runtime backends exercise the Custard split exactly like `fstar-codec`:
+The runtime backends exercise the Custard split exactly like `codec`:
 
 - **OCaml** extracts the *pure spec* (`Example.Majority.Types` + `Example.Majority` via
   `--codegen OCaml`) *and* the Pulse leaf (`Example.Majority.Pulse` via
@@ -136,7 +136,7 @@ The runtime backends exercise the Custard split exactly like `fstar-codec`:
 - **cli** extracts `Example.Majority.CLI` the same way but roots
   `--custard_main Example.Majority.CLI.main`, so
   Custard emits a standalone `main` that calls the leaf.  (This is the one
-  addition over `fstar-codec`, which has no CLI.)
+  addition over `codec`, which has no CLI.)
 
 > To keep the Pulse leaf extractable in *all three* backends, its result type
 > is the F\*-defined variant [Example.Majority.Types.vote_result] (not the stdlib
@@ -149,7 +149,7 @@ Custard's `--custard_backend` enum is `["OCaml"; "FSharp"; "KrmlC";
 "KrmlRust"; "C"]`.  The two `Krml*` entries route through the removed
 KaRaMeL toolchain and are dead upstream (`KrmlRust` produces 431 rustc errors;
 `KrmlC` is superseded by the direct `C` backend) — dropped, matching
-`fstar-codec`.  There is no wasm backend in the new F\*.
+`codec`.  There is no wasm backend in the new F\*.
 
 ## Build everything
 
@@ -239,7 +239,7 @@ renaming.
 
 ### The Pulse idiom (pinned here)
 
-The `Example.Majority.Pulse` leaf followed the `fstar-codec` pattern and is worth
+The `Example.Majority.Pulse` leaf followed the `codec` pattern and is worth
 imitating closely:
 
 - **Array**: `A.array U32.t` (`Pulse.Lib.Array`), view `A.pts_to b s`
@@ -260,7 +260,7 @@ imitating closely:
 - **F#-extractability**: the leaf's result type must be an F\*-defined variant
   (here [Example.Majority.Types.vote_result]), not the stdlib `option`/`tuple` — those
   are hand-written OCaml with no F# realization and Fail with Error 395 when
-  reached from a rooted entry point.  `fstar-codec` does the same
+  reached from a rooted entry point.  `codec` does the same
   (`decode_result_c`, `DR_Inl`/`DR_Inr`).
 
 ## Notes
@@ -269,7 +269,7 @@ imitating closely:
   [`dysinger/fstar`](https://github.com/dysinger/fstar) (the `v2026.09.20+lsp`
   branch — the LSP-enabled build of the first stable Custard release).  The
   KaRaMeL install step is neutralized in the overlay (no `krml` is consumed),
-  exactly as in `fstar-codec`.
+  exactly as in `codec`.
 
 ## License
 

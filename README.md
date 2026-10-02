@@ -1,4 +1,4 @@
-# F* Project Template
+# example — minimal verified F* project template
 
 Copyright 2026 Department of Code LLC.
 SPDX-License-Identifier: AGPL-3.0-or-later
@@ -10,9 +10,9 @@ CLI) is checked, extracted via **Custard**, and compiled to **C** (a native
 library and a standalone executable) and **OCaml** — all driven by
 [Nix flakes](https://nixos.wiki/wiki/Flakes).
 
-This is the post-KaRaMeL era of F\* (`v2026.09.20+lsp`): the Low\*/KaRaMeL
-stdlib was removed upstream and replaced by **Pulse** + **Custard**.  There is
-no `krml`, no `rust`/`wasm` backend, and no `Stack`/`HyperStack` effect.
+This is the Custard era of F\* (`v2026.09.20+lsp`): the Low\* stdlib was
+removed upstream and replaced by **Pulse** + **Custard**, the direct-C11
+extractor with no separate toolchain or runtime.
 
 ## Getting started
 
@@ -143,14 +143,6 @@ The runtime backends exercise the Custard split exactly like `codec`:
 > `option`/`tuple`, which are hand-written OCaml with no F# realization —
 > Error 395).  See the Pulse-idiom note under "Extending".
 
-### Dropped backends
-
-Custard's `--custard_backend` enum is `["OCaml"; "FSharp"; "KrmlC";
-"KrmlRust"; "C"]`.  The two `Krml*` entries route through the removed
-KaRaMeL toolchain and are dead upstream (`KrmlRust` produces 431 rustc errors;
-`KrmlC` is superseded by the direct `C` backend) — dropped, matching
-`codec`.  There is no wasm backend in the new F\*.
-
 ## Build everything
 
 ```bash
@@ -267,9 +259,7 @@ imitating closely:
 
 - The `fstar` input is pinned to
   [`dysinger/fstar`](https://github.com/dysinger/fstar) (the `v2026.09.20+lsp`
-  branch — the LSP-enabled build of the first stable Custard release).  The
-  KaRaMeL install step is neutralized in the overlay (no `krml` is consumed),
-  exactly as in `codec`.
+  branch — the LSP-enabled build of the first stable Custard release).
 
 ## License
 

@@ -14,11 +14,6 @@
       url = "github:dysinger/fstar/v2026.09.20+lsp";
       flake = false;
     };
-    # No karamel input.  karamel is an in-tree SUBMODULE of F* that upstream's
-    # .nix/fstar.nix synthesizes (cp -r karamel-src) only to run `make -C
-    # karamel install`, which installs the `krml` binary + headers.  We do not
-    # use krml (fstar.exe + fstar.lib are all our targets consume), so karamel
-    # is dropped entirely and the karamel install step is neutralized.
   };
 
   outputs =

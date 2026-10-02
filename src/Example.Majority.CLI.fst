@@ -29,6 +29,7 @@ module U32 = FStar.UInt32
 module I32 = FStar.Int32
 open Example.Majority.Types
 
+
 (** A fixed vote sequence: [2; 2; 1; 2; 1; 2].  The majority element is [2]. *)
 (** The vote table as a top-level static array.  (Custard requires a static
     array's braced initializer to be the body of a top-level definition, which
@@ -37,6 +38,10 @@ open Example.Majority.Types
 let votes =
   G.mk_static_array [2ul; 2ul; 1ul; 2ul; 1ul; 2ul]
 
+
+(** [main] — the program entry point: run the majority-vote scan over the
+    static [votes] table and return exit status [0] when the scan finds the
+    expected majority element ([2]), [1] otherwise. *)
 divergent
 fn main ()
   returns x: I32.t

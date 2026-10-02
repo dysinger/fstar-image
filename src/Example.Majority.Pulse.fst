@@ -33,9 +33,11 @@ module Seq = FStar.Seq
 open FStar.Seq
 open Example.Majority.Types
 
+
 (** The pure spec the leaf implements: Boyer–Moore candidate selection. *)
 let majority_vote_spec (s: Seq.seq U32.t) : vote_result =
   vote_result_of_option (Example.Majority.find_candidate s)
+
 
 (** [majority_vote] — run the Boyer–Moore candidate pass over the buffer [b]
     (viewed as [s0 : Seq.seq U32.t]), returning [Some candidate].

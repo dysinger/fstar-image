@@ -37,6 +37,7 @@ module U32 = FStar.UInt32
 module Seq = FStar.Seq
 open Example.Majority.Types
 
+
 (** [candidate_step] — one step of the Boyer–Moore scan.
 
     State is [(cand, count)]: the current candidate and the current counter.
@@ -52,6 +53,7 @@ let candidate_step (cand: elem) (cnt: nat) (x: elem) : elem & nat =
   else if cand = x then (cand, cnt + 1)
   else (cand, cnt - 1)
 
+
 (** The extracted result of one Boyer–Moore step: a candidate + counter pair.
     A record (rather than a bare tuple) so Custard's F# backend has a
     realization for it (tuples over [U32.t] are hand-written OCaml with no F#
@@ -60,6 +62,7 @@ noeq type step_result = {
   step_cand: elem;
   step_cnt: U32.t;
 }
+
 
 (** [candidate_step_u32] — the same one-step transition on an extractable
     [U32.t] counter, so the Pulse leaf can use it directly.  The precondition
@@ -77,6 +80,7 @@ let candidate_step_u32 (cand: elem) (cnt: U32.t) (x: elem)
   if U32.eq cnt 0ul then { step_cand = x; step_cnt = 1ul }
   else if U32.eq cand x then { step_cand = cand; step_cnt = U32.add cnt 1ul }
   else { step_cand = cand; step_cnt = U32.sub cnt 1ul }
+
 
 (** [find_candidate s] — the candidate-selection pass.
 
@@ -101,6 +105,7 @@ let rec bm_scan (s: Seq.seq elem) (lo: nat) (hi: nat { lo <= hi /\ hi <= Seq.len
       let c, k = candidate_step cand cnt (Seq.index s lo) in
       bm_scan s (lo + 1) hi c k
 
+
 (** One-step unfold of [bm_scan]: reading [s[lo]] folds exactly one
     [candidate_step] before scanning [s[lo+1 .. hi)].  This is the loop-body
     equation the Pulse leaf's invariant preservation reduces to; it is stated
@@ -111,6 +116,7 @@ let lemma_bm_scan_step (s: Seq.seq elem) (lo: nat) (hi: nat { lo < hi /\ hi <= S
                bm_scan s (lo + 1) hi c k))
           [SMTPat (bm_scan s lo hi cand cnt)]
   = ()
+
 
 (** [bm_scan] over a prefix slice reads exactly the same elements as [bm_scan]
     over the parent sequence (indices are into the shared prefix [s[0..hi)]),
@@ -124,9 +130,13 @@ let rec lemma_bm_scan_slice (s: Seq.seq elem) (n: nat { n <= Seq.length s }) (lo
     else
       lemma_bm_scan_slice s n (lo + 1) hi (fst (candidate_step cand cnt (Seq.index s lo))) (snd (candidate_step cand cnt (Seq.index s lo)))
 
+
+(** [find_candidate s] — run the full candidate-selection pass and return the
+    surviving candidate, or [None] when [s] is empty. *)
 let find_candidate (s: Seq.seq elem) : option elem =
   if Seq.length s = 0 then None
   else Some (fst (bm_scan s 1 (Seq.length s) (Seq.index s 0) 1))
+
 
 (** The candidate pass over a non-empty prefix slice [s[0..n)] is the first
     component of [bm_scan] over the full sequence — the exact equation the
@@ -136,10 +146,12 @@ let lemma_find_candidate_slice (s: Seq.seq elem) (n: nat { 0 < n /\ n <= Seq.len
           [SMTPat (find_candidate (Seq.slice s 0 n))]
   = lemma_bm_scan_slice s n 1 n (Seq.index s 0) 1
 
+
 (** [verify x s] — the verification pass: does [x] actually appear more than
     [|s| / 2] times? *)
 let verify (x: elem) (s: Seq.seq elem) : bool =
   count x s > Seq.length s / 2
+
 
 (** The verification pass is the algorithm's ground truth: [verify x s] is
     true exactly when [x] is a majority of [s].  This is the spec↔impl
@@ -147,6 +159,7 @@ let verify (x: elem) (s: Seq.seq elem) : bool =
 let lemma_verify_is_majority (x: elem) (s: Seq.seq elem)
   : Lemma (verify x s == true <==> majority x s)
   = ()
+
 
 (** Boyer–Moore is sound for the *complete* two-pass procedure: when the
     candidate pass returns [Some c], running the verification pass on [c]

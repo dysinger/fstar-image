@@ -1,28 +1,27 @@
 # Copyright 2026 Department of Code LLC.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Minimal verified F* project (library + CLI), Custard era.
+# basen — Data.BaseN verified base-N codec library.
 #
 # Takes the F* toolchain as concrete derivations (no `pkgs` blob, no overlay
-# assumption).  Module names and their dependency order live in the Makefile;
-# `checked` delegates to `make check`.
+# assumption, no module-name/order arguments).  Module names and their
+# dependency order live in the Makefile (the no-nix build); `checked` delegates
+# to `make check`, exporting the toolchain paths the Makefile already reads.
 #
-# The example is a Boyer–Moore majority-vote library plus a command-line
-# executable that exercises it:
+# The codec dependency (Data.Codec.Types) is injected as a source dir +
+# pre-verified `.checked` cache (`codec-src` / `codec-checked`), sourced from
+# the separate `fstar-codec` flake input in flake.nix.
 #
-#   - `Example.Majority.Types`  — pure spec: the candidate/count types + lemmas
-#   - `Example.Majority`         — pure Boyer–Moore algorithm + correctness lemmas
-#   - `Example.Majority.Pulse`   — Pulse leaf: majority_vote over a Pulse array
-#   - `Example.Majority.CLI`     — `main : unit -> Int32.t` CLI entry point
-#
-# Artifacts:
+# Artifacts (named by deliverable, not by backend):
 #   - `checked` — F* verification of src/ + test/ (the 0-admit gate).
-#   - `ocaml`   — findlib package of the pure spec (Types + Majority).
-#   - `native`  — C11 shared/static lib of the Pulse leaf (`Example.Majority.Pulse`,
+#   - `ocaml`   — findlib package shipping ALL OCaml-extractable modules:
+#                 the pure spec (Base08/16/32/64 + facade) AND the Pulse leaf
+#                 (Data.BaseN.Pulse, `--custard_backend OCaml`) as one dune lib.
+#   - `native`  — C11 shared/static lib of the Pulse leaf (Data.BaseN.Pulse,
 #                 `--custard_backend C`).
-#   - `cli`     — a packaged native executable (`Example.Majority.CLI`, `--custard_main`).
+#   - `fsharp`  — .NET library of the Pulse leaf (`--custard_backend FSharp`).
 #
-# Returns { checked; ocaml; native; cli; }.
+# Returns { checked; ocaml; native; fsharp; }.
 
 {
   fstar,
@@ -31,21 +30,32 @@
   ocamlPackages,
   stdenv,
   dotnet,
+  codec-src,
+  codec-checked,
 }:
 
 let
   inherit (stdenv) mkDerivation;
 
-  pname = "example";
+  # Package name.  The package is "basen" (git repo "fstar-basen"), but the internal
+  # derivation/artifact names drop the "fstar-" prefix.
+  pname = "basen";
 
   pure-modules = [
-    "Example.Majority.Types"
-    "Example.Majority"
+    "Data.BaseN.Base08"
+    "Data.BaseN.Base16"
+    "Data.BaseN.Base32"
+    "Data.BaseN.Base64"
+    "Data.BaseN"
   ];
 
   fstar-exe = "${fstar}/bin/fstar.exe";
   flib = "${fstar}/lib/fstar";
   ulib = "${flib}/ulib";
+
+  # Pulse ships in the install under $(locate_lib)/pulse (sources under
+  # pulse/{common,pulse/lib}, `.checked` under pulse/{common.checked,
+  # pulse.checked}).
   pulse-incs = [
     "${flib}/pulse/common"
     "${flib}/pulse/common.checked"
@@ -63,9 +73,12 @@ let
     ];
   };
 
+  # The toolchain environment the Makefile reads (see its guards).
   make-env = ''
     export FSTAR="${fstar-exe}"
     export FSTAR_CHECKED="${fstar-checked}"
+    export CODEC_SRC="${codec-src}"
+    export CODEC_CHECKED="${codec-checked}"
   '';
 
   checked = mkDerivation {
@@ -80,15 +93,31 @@ let
     buildPhase = ''
       ${make-env}
       make check OUT="$out"
+      # Flatten $(OUT)/checked/*.checked to $out/*.checked.
       if [ -d "$out/checked" ]; then mv "$out"/checked/*.checked "$out"/ 2>/dev/null || true; rmdir "$out/checked"; fi
     '';
     installPhase = "true";
   };
 
   # ── OCaml source backend ────────────────────────────────────────────
+  #
+  # `fstar.exe --codegen OCaml` extracts the pure spec modules; the Pulse leaf
+  # is extracted via `--codegen Custard --custard_backend OCaml` and merged into
+  # one dune library.  One file per invocation, in dependency order; the codec
+  # dependency's `.checked` cache is seeded so cross-module inlining resolves.
 
+  # ocaml-modules: every module compiled into the dune library.  This is the
+  # basen pure-modules PLUS the codec pure spec (`Data.Codec.Types`,
+  # `Data.Codec`) — extracted locally (NOT consumed from `codec-ocaml`) so the
+  # raw top-level `Data_Codec_Types`/`Data_Codec` names resolve unwrapped
+  # (codec-ocaml wraps its modules into a `Codec.*` namespace, breaking the
+  # bare references the basen `.ml` emit).  No `Custard` collision: we only
+  # extract the codec PURE spec, never its Pulse leaf.
   ocaml-lib-name = builtins.replaceStrings [ "-" ] [ "_" ] pname;
-  ocaml-modules = map (m: builtins.replaceStrings [ "." ] [ "_" ] m) pure-modules;
+  ocaml-modules = (map (m: builtins.replaceStrings [ "." ] [ "_" ] m) pure-modules) ++ [
+    "Data_Codec_Types"
+    "Data_Codec"
+  ];
 
   ocaml-src = mkDerivation {
     name = "${pname}-ocaml-src";
@@ -101,38 +130,58 @@ let
             export ULIB="${ulib}"
             mkdir -p $out cache
             cp ${fstar-checked}/*.checked cache/ 2>/dev/null || true
-            # 1) Extract the pure spec (Example.Majority.Types + Example.Majority) via legacy
-            #    `--codegen OCaml` (one file per invocation, dependency order).
+            cp ${codec-checked}/*.checked cache/ 2>/dev/null || true
+            # 0) Extract the codec pure spec (Data.Codec.Types + Data.Codec) locally
+            #    so the top-level `Data_Codec_Types`/`Data_Codec` module names the
+            #    basen `.ml` emit resolve unwrapped (codec-ocaml wraps them).
+            for m in Data.Codec.Types Data.Codec; do
+              ${fstar-exe} \
+                --no_default_includes --include "$ULIB" --include ${codec-src}/src \
+                --cache_checked_modules --cache_dir cache --odir cache \
+                ${codec-src}/src/$m.fst || exit 1
+              ${fstar-exe} \
+                --no_default_includes --include "$ULIB" --include ${codec-src}/src --include cache \
+                --cache_checked_modules --cache_dir cache \
+                --codegen OCaml --odir $out \
+                ${codec-src}/src/$m.fst || exit 1
+            done
+            # 1) Extract the pure spec via legacy `--codegen OCaml` (one file per
+            #    invocation, dependency order).
             for m in ${builtins.concatStringsSep " " pure-modules}; do
               ${fstar-exe} \
-                --no_default_includes --include "$ULIB" --include ./src \
+                --no_default_includes --include "$ULIB" --include ${codec-src}/src --include ./src \
                 --cache_checked_modules --cache_dir cache --odir cache \
                 src/$m.fst || exit 1
               ${fstar-exe} \
-                --no_default_includes --include "$ULIB" --include ./src --include cache \
+                --no_default_includes --include "$ULIB" --include ${codec-src}/src --include ./src --include cache \
                 --cache_checked_modules --cache_dir cache \
                 --codegen OCaml --odir $out \
                 src/$m.fst || exit 1
             done
-            # 2) Extract the Pulse leaf (Example.Majority.Pulse), OCaml backend.
+            # 2) Extract the Pulse leaf (Data.BaseN.Pulse), OCaml backend.
             PULSE_INCS=""
             for d in ${lib.concatStringsSep " " pulse-incs}; do
               PULSE_INCS="$PULSE_INCS --include $d"
             done
             ${fstar-exe} \
-              --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src \
+              --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src \
               --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
               --z3rlimit 120 \
               --cache_checked_modules --cache_dir cache --odir cache \
-              src/Example.Majority.Pulse.fst || exit 1
+              src/Data.BaseN.Pulse.fst || exit 1
             ${fstar-exe} \
-              --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src --include cache \
+              --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src --include cache \
               --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
               --cache_checked_modules --cache_dir cache \
               --codegen Custard --custard_backend OCaml --custard_monomorphize_types true \
-              --custard_entry Example.Majority.Pulse.majority_vote \
+              --custard_entry Data.BaseN.Pulse.encode_base16 \
+              --custard_entry Data.BaseN.Pulse.decode_base16 \
+              --custard_entry Data.BaseN.Pulse.encode_base64_triple \
+              --custard_entry Data.BaseN.Pulse.encode_base64_tail1 \
+              --custard_entry Data.BaseN.Pulse.encode_base64_tail2 \
+              --custard_entry Data.BaseN.Pulse.decode_base64_quad \
               --odir $out \
-              src/Example.Majority.Pulse.fst || exit 1
+              src/Data.BaseN.Pulse.fst || exit 1
             # One dune library: pure spec + Pulse leaf together.
             cat > $out/dune-project <<DUNE_PROJECT
       (lang dune 3.11)
@@ -168,7 +217,11 @@ let
     OCAMLPATH = "${fstar}/lib";
   };
 
-  # ── native (C) backend — Pulse leaf extracted to C11 ────────────────
+  # ── native (C) backend ─────────────────────────────────────────────
+  #
+  # `--codegen Custard --custard_backend C` extracts the Pulse leaf to C11
+  # The whole module is a library (no `main`), rooted
+  # at the six leaf encode/decode functions.
 
   native = mkDerivation {
     pname = "${pname}-native";
@@ -180,29 +233,39 @@ let
     ];
     inherit meta;
     buildPhase = ''
-      export ULIB="${ulib}"
       mkdir -p $out cache
+      ULIB="${ulib}"
       PULSE_INCS=""
       for d in ${lib.concatStringsSep " " pulse-incs}; do
         PULSE_INCS="$PULSE_INCS --include $d"
       done
       cp ${fstar-checked}/*.checked cache/ 2>/dev/null || true
-      for m in Example.Majority.Types Example.Majority Example.Majority.Pulse; do
+      cp ${codec-checked}/*.checked cache/ 2>/dev/null || true
+      # Verify in dependency order into a cache so cross-module inlining can
+      # find our own modules' `.checked` files.
+      for m in Data.BaseN.Base08 Data.BaseN.Base16 Data.BaseN.Base32 Data.BaseN.Base64 Data.BaseN Data.BaseN.Pulse; do
         ${fstar-exe} \
-          --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src \
+          --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src \
           --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
           --z3rlimit 120 \
           --cache_checked_modules --cache_dir cache --odir cache \
           src/$m.fst || exit 1
       done
+      # Extract the whole `Data.BaseN.Pulse` module to C (library mode).
       ${fstar-exe} \
-        --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src --include cache \
+        --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src --include cache \
         --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
         --cache_checked_modules --cache_dir cache \
         --codegen Custard --custard_backend C --custard_monomorphize_types true \
-        --custard_entry Example.Majority.Pulse.majority_vote \
+        --custard_entry Data.BaseN.Pulse.encode_base16 \
+        --custard_entry Data.BaseN.Pulse.decode_base16 \
+        --custard_entry Data.BaseN.Pulse.encode_base64_triple \
+        --custard_entry Data.BaseN.Pulse.encode_base64_tail1 \
+        --custard_entry Data.BaseN.Pulse.encode_base64_tail2 \
+        --custard_entry Data.BaseN.Pulse.decode_base64_quad \
         --odir $out \
-        src/Example.Majority.Pulse.fst || exit 1
+        src/Data.BaseN.Pulse.fst || exit 1
+      # Compile the emitted C11 to a shared object + static lib.
       cc -c -Wall -Wextra -Werror -std=c11 -O2 -fPIC -I $out $out/Custard.c -o $out/Custard.o
       if [ "$(uname -s)" = Darwin ]; then
         cc -dynamiclib $out/Custard.o -o $out/lib${pname}.dylib
@@ -217,11 +280,10 @@ let
 
   # ── F# (.NET) backend ─────────────────────────────────────────────
   #
-  # Same flat pattern as `native`/codec: verify → extract F# → build
-  # with `dotnet`.  Rooted at the single entry point (majority_vote), which
-  # returns `vote_result` (an F*-defined variant, realizable in F#), so no
-  # tuple-returning proof
-  # lemmas are pulled in.
+  # Same flat pattern as `native`: verify → extract F# → compile with
+  # `dotnet build` into a .NET library assembly.  Rooted at the six leaf
+  # encode/decode functions (the roundtrip lemmas, which have no F#
+  # realization, are not pulled in).
 
   fsharp = mkDerivation {
     pname = "${pname}-fsharp";
@@ -239,71 +301,35 @@ let
       export DOTNET_NOLOGO=1
       export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
       export HOME=$NIX_BUILD_TOP
-      export ULIB="${ulib}"
+      ULIB="${ulib}"
       PULSE_INCS=""
       for d in ${lib.concatStringsSep " " pulse-incs}; do
         PULSE_INCS="$PULSE_INCS --include $d"
       done
       cp ${fstar-checked}/*.checked cache/ 2>/dev/null || true
-      for m in Example.Majority.Types Example.Majority Example.Majority.Pulse; do
+      cp ${codec-checked}/*.checked cache/ 2>/dev/null || true
+      for m in Data.BaseN.Base08 Data.BaseN.Base16 Data.BaseN.Base32 Data.BaseN.Base64 Data.BaseN Data.BaseN.Pulse; do
         ${fstar-exe} \
-          --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src \
+          --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src \
           --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
           --z3rlimit 120 \
           --cache_checked_modules --cache_dir cache --odir cache \
           src/$m.fst || exit 1
       done
       ${fstar-exe} \
-        --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src --include cache \
+        --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src --include cache \
         --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
         --cache_checked_modules --cache_dir cache \
         --codegen Custard --custard_backend FSharp --custard_monomorphize_types true \
-        --custard_entry Example.Majority.Pulse.majority_vote \
+        --custard_entry Data.BaseN.Pulse.encode_base16 \
+        --custard_entry Data.BaseN.Pulse.decode_base16 \
+        --custard_entry Data.BaseN.Pulse.encode_base64_triple \
+        --custard_entry Data.BaseN.Pulse.encode_base64_tail1 \
+        --custard_entry Data.BaseN.Pulse.encode_base64_tail2 \
+        --custard_entry Data.BaseN.Pulse.decode_base64_quad \
         --odir src-out \
-        src/Example.Majority.Pulse.fst || exit 1
+        src/Data.BaseN.Pulse.fst || exit 1
       dotnet build src-out/Custard.fsproj -c Release -o $out || exit 1
-    '';
-    installPhase = "true";
-  };
-
-  # ── cli — packaged command-line executable ─────────────────────────
-
-  cli = mkDerivation {
-    pname = "${pname}-cli";
-    version = "0.1.0";
-    src = ./.;
-    nativeBuildInputs = [
-      fstar
-      fstar-checked
-      stdenv.cc
-    ];
-    inherit meta;
-    buildPhase = ''
-      export ULIB="${ulib}"
-      mkdir -p $out cache
-      PULSE_INCS=""
-      for d in ${lib.concatStringsSep " " pulse-incs}; do
-        PULSE_INCS="$PULSE_INCS --include $d"
-      done
-      cp ${fstar-checked}/*.checked cache/ 2>/dev/null || true
-      for m in Example.Majority.Types Example.Majority Example.Majority.Pulse Example.Majority.CLI; do
-        ${fstar-exe} \
-          --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src \
-          --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
-          --z3rlimit 120 \
-          --cache_checked_modules --cache_dir cache --odir cache \
-          src/$m.fst || exit 1
-      done
-      ${fstar-exe} \
-        --no_default_includes --include "$ULIB" $PULSE_INCS --include ./src --include cache \
-        --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
-        --cache_checked_modules --cache_dir cache \
-        --codegen Custard --custard_backend C --custard_monomorphize_types true \
-        --custard_main Example.Majority.CLI.main \
-        --odir $out \
-        src/Example.Majority.CLI.fst || exit 1
-      mkdir -p $out/bin
-      cc -Wall -Wextra -Werror -std=c11 -O2 -I $out $out/Custard.c -o $out/bin/${pname}-cli
     '';
     installPhase = "true";
   };
@@ -315,6 +341,5 @@ in
     ocaml
     native
     fsharp
-    cli
     ;
 }

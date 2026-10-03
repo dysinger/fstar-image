@@ -1,7 +1,7 @@
 <div align="center">
   <h1>License</h1>
-  <p><strong>example</strong> — a minimal verified F* project
-  template that extracts to C, OCaml, and F# via Custard.</p>
+  <p><strong>basen</strong> — a formally verified, base-N encoding
+  library (RFC 4648) written in F\*.</p>
 </div>
 
 ---

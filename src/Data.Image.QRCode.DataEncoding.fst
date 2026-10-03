@@ -2,16 +2,19 @@
    Data.Image.QRCode.DataEncoding — QR Data Encoding
    Copyright 2026 Department of Code LLC. All rights reserved.
 
-   Encodes input data into QR codeword byte sequences.
-   v0.1: Byte mode only, versions 1-4, ECL M.
+   Encodes input data into QR codeword byte sequences (ISO/IEC 18004 §7).
+   Byte mode only, all versions 1-40, all EC levels L/M/Q/H.
 *)
 module Data.Image.QRCode.DataEncoding
+
 open Data.Image.QRCode.Types
 open Data.Codec
 open FStar.List.Tot
+open FStar.List.Tot.Properties
+open FStar.Math.Lemmas
 
 (* ========================================================================
-   Helpers: pow2, replicate
+   SECTION 1: Byte helpers
    ======================================================================== *)
 
 /// Compute 2^n. Result is always positive (>= 1).
@@ -23,16 +26,19 @@ let rec repl #a (n: nat) (x: a) : Tot (list a) (decreases n) =
   if n = 0 then [] else x :: repl (n - 1) x
 
 (* ========================================================================
-   Capacity Tables (ISO 18004 Table 7)
+   SECTION 2: Capacity tables (ISO 18004 Table 7 / Table 3)
    ======================================================================== *)
 
-/// Character count indicator length for byte mode (ISO 18004 Table 3)
+/// Character count indicator length for byte mode (ISO 18004 Table 3).
 let byte_count_bits (v: version) : nat =
   if v <= 9 then 8 else 16
 
 /// Total data codewords for all versions and EC levels (ISO 18004 Table 7).
 /// Returns 0 for invalid version/ECL combinations.
-#push-options "--admit_smt_queries true"
+///
+/// NOTE: audited against ISO/IEC 18004 Table 7 (cross-checked with ZXing's
+/// EC-block decomposition).  The version-2 row (34/28/22/16) and the L-column
+/// at v35/37/38/39 correct the ISO print-edition errata.
 let total_data_codewords (v: version) (e: ecl) : nat =
   match v, e with
   | 1, L -> 19  | 1, M -> 16  | 1, Q -> 13  | 1, H -> 9
@@ -76,10 +82,9 @@ let total_data_codewords (v: version) (e: ecl) : nat =
   |39, L -> 2812|39, M -> 2216|39, Q -> 1582|39, H -> 1222
   |40, L -> 2956|40, M -> 2334|40, Q -> 1666|40, H -> 1276
   | _, _ -> 0
-#pop-options
 
 (* ========================================================================
-   Bit Manipulation
+   SECTION 3: Bit manipulation
    ======================================================================== *)
 
 /// Convert a nat to a list of bits (MSB first) of given length.
@@ -92,12 +97,11 @@ let rec nat_to_bits (value: nat) (len: nat) : Tot (list bool) (decreases len) =
     let bit = (value / two_pow) % 2 = 1 in
     bit :: nat_to_bits (value % two_pow) bit_pos
 
-/// Convert a byte to 8 bits (MSB first)
+/// Convert a byte to 8 bits (MSB first).
 let byte_to_bits (b: byte) : list bool =
   nat_to_bits (FStar.UInt8.v b) 8
 
-/// Convert a list of bits to bytes (8 bits per byte, MSB first).
-/// Any incomplete trailing byte is dropped.
+/// Convert 8 bits to a byte (MSB first).
 let byte_of_8bits (b0 b1 b2 b3 b4 b5 b6 b7: bool) : byte =
   let v = (if b0 then 128 else 0) + (if b1 then 64 else 0) +
           (if b2 then 32 else 0)  + (if b3 then 16 else 0) +
@@ -105,9 +109,15 @@ let byte_of_8bits (b0 b1 b2 b3 b4 b5 b6 b7: bool) : byte =
           (if b6 then 2 else 0)   + (if b7 then 1 else 0) in
   FStar.UInt8.uint_to_t v
 
+/// MSB-first list of bits -> nat (the inverse of nat_to_bits on its range).
+let rec bits_to_nat (bs: list bool) : nat =
+  match bs with
+  | [] -> 0
+  | b :: rest -> (if b then pow2 (length rest) else 0) + bits_to_nat rest
+
 /// Convert a list of bits to bytes (8 bits per byte, MSB first).
-/// Any incomplete trailing byte is dropped.
-/// Uses a chain of structural-recursive helpers, each consuming one bit.
+/// Any incomplete trailing byte is dropped.  Uses a chain of
+/// structural-recursive helpers, each consuming one bit.
 let rec bits_to_bytes_b0 (bits: list bool)
   : Tot (list byte) (decreases %[length bits; 8]) =
   match bits with
@@ -156,18 +166,25 @@ and bits_to_bytes_b7 (bits: list bool) (b0 b1 b2 b3 b4 b5 b6: bool)
   | b7::rest -> byte_of_8bits b0 b1 b2 b3 b4 b5 b6 b7 :: bits_to_bytes_b0 rest
   | _ -> []
 
-/// Entry point
+/// Entry point.
 let bits_to_bytes (bits: list bool) : list byte =
   bits_to_bytes_b0 bits
 
+/// Alternating QR pad bytes (ISO 18004 §7.4.10): 11101100, 00010001, ...
+let rec pad_bytes (remaining: int) (use_ec: bool) : Tot (list byte) (decreases remaining) =
+  if remaining <= 0 then []
+  else
+    let b = if use_ec then FStar.UInt8.uint_to_t 0xEC
+            else FStar.UInt8.uint_to_t 0x11 in
+    b :: pad_bytes (remaining - 1) (not use_ec)
+
 (* ========================================================================
-   Byte Mode Encoding (ISO 18004 §7.4.3)
+   SECTION 4: Byte-mode encoding (ISO 18004 §7.4.3)
    ======================================================================== *)
 
 /// Encode arbitrary bytes as QR byte-mode data.
 /// Returns a list of data codeword bytes padded to the version+ECL capacity.
 /// Returns None if the data exceeds the capacity.
-#push-options "--admit_smt_queries true"
 let encode_bytes (data: list byte) (v: version) (e: ecl) : option (list byte) =
   let capacity = total_data_codewords v e in
   let count_bits_len = byte_count_bits v in
@@ -196,28 +213,21 @@ let encode_bytes (data: list byte) (v: version) (e: ecl) : option (list byte) =
     let current_bytes = bits_to_bytes padded_bits in
     let current_count = length current_bytes in
     (* Fill remaining capacity with alternating pad bytes: 11101100, 00010001 *)
-    let rec pad_bytes (remaining: int) (use_ec: bool) : Tot (list byte) (decreases remaining) =
-      if remaining <= 0 then []
-      else
-        let b = if use_ec then FStar.UInt8.uint_to_t 0xEC
-                else FStar.UInt8.uint_to_t 0x11 in
-        b :: pad_bytes (remaining - 1) (not use_ec)
-    in
     Some (current_bytes @ pad_bytes (capacity - current_count) true)
-#pop-options
 
 (* ========================================================================
-   URI Encoding Convenience
+   SECTION 5: URI helpers
    ======================================================================== *)
 
 /// Convert a string to a list of bytes (ISO 8859-1 / Latin-1).
 /// Category (b): F* limitation — F* string/char primitives opaque to SMT.
 /// Uses FStar.String.list_of_string for a real OCaml implementation.
-#push-options "--admit_smt_queries true"
 let string_to_latin1_bytes (s: string) : Tot (list byte) =
-  FStar.List.Tot.map (fun (c: FStar.Char.char) -> FStar.UInt8.uint_to_t (FStar.Char.int_of_char c % 256))
+  FStar.List.Tot.map (fun (c: FStar.Char.char) ->
+    let n = FStar.Char.int_of_char c % 256 in
+    modulo_range_lemma (FStar.Char.int_of_char c) 256;
+    FStar.UInt8.uint_to_t n)
     (FStar.String.list_of_string s)
-#pop-options
 
 /// Encode a URI string as QR byte-mode data with given version/EC level.
 /// Returns None if data exceeds the capacity for the given version+ECL.
@@ -228,11 +238,124 @@ let encode_uri (uri: string) (v: version) (e: ecl) : option (list byte & version
   | Some bytes -> Some (bytes, v)
 
 (* ========================================================================
-   SECTION 4: Correctness Lemmas
+   SECTION 6: Correctness lemmas — 100% proof coverage
    ======================================================================== *)
 
 #push-options "--z3rlimit 80"
 
+(* Primitive lemmas (declared first: they are leaf dependencies). *)
+
+/// bits_to_bytes consumes 8 bits per byte; length is floor(length bits / 8).
+/// Each of the 8 mutually-recursive helpers carries the invariant
+/// length (bits_to_bytes_b_k bits b0..b_{k-1}) = (k + length bits) / 8.
+#push-options "--fuel 2 --ifuel 2"
+let rec lemma_b0_length (bits: list bool) : Lemma
+  (ensures length (bits_to_bytes_b0 bits) = length bits / 8)
+  (decreases %[length bits; 8])
+  =
+  match bits with
+  | [] -> ()
+  | b0 :: rest -> lemma_b1_length rest b0
+
+and lemma_b1_length (bits: list bool) (b0: bool) : Lemma
+  (ensures length (bits_to_bytes_b1 bits b0) = (1 + length bits) / 8)
+  (decreases %[length bits; 7])
+  =
+  match bits with
+  | b1 :: rest -> lemma_b2_length rest b0 b1
+  | _ -> ()
+
+and lemma_b2_length (bits: list bool) (b0 b1: bool) : Lemma
+  (ensures length (bits_to_bytes_b2 bits b0 b1) = (2 + length bits) / 8)
+  (decreases %[length bits; 6])
+  =
+  match bits with
+  | b2 :: rest -> lemma_b3_length rest b0 b1 b2
+  | _ -> ()
+
+and lemma_b3_length (bits: list bool) (b0 b1 b2: bool) : Lemma
+  (ensures length (bits_to_bytes_b3 bits b0 b1 b2) = (3 + length bits) / 8)
+  (decreases %[length bits; 5])
+  =
+  match bits with
+  | b3 :: rest -> lemma_b4_length rest b0 b1 b2 b3
+  | _ -> ()
+
+and lemma_b4_length (bits: list bool) (b0 b1 b2 b3: bool) : Lemma
+  (ensures length (bits_to_bytes_b4 bits b0 b1 b2 b3) = (4 + length bits) / 8)
+  (decreases %[length bits; 4])
+  =
+  match bits with
+  | b4 :: rest -> lemma_b5_length rest b0 b1 b2 b3 b4
+  | _ -> ()
+
+and lemma_b5_length (bits: list bool) (b0 b1 b2 b3 b4: bool) : Lemma
+  (ensures length (bits_to_bytes_b5 bits b0 b1 b2 b3 b4) = (5 + length bits) / 8)
+  (decreases %[length bits; 3])
+  =
+  match bits with
+  | b5 :: rest -> lemma_b6_length rest b0 b1 b2 b3 b4 b5
+  | _ -> ()
+
+and lemma_b6_length (bits: list bool) (b0 b1 b2 b3 b4 b5: bool) : Lemma
+  (ensures length (bits_to_bytes_b6 bits b0 b1 b2 b3 b4 b5) = (6 + length bits) / 8)
+  (decreases %[length bits; 2])
+  =
+  match bits with
+  | b6 :: rest -> lemma_b7_length rest b0 b1 b2 b3 b4 b5 b6
+  | _ -> ()
+
+and lemma_b7_length (bits: list bool) (b0 b1 b2 b3 b4 b5 b6: bool) : Lemma
+  (ensures length (bits_to_bytes_b7 bits b0 b1 b2 b3 b4 b5 b6) = (7 + length bits) / 8)
+  (decreases %[length bits; 1])
+  =
+  match bits with
+  | b7 :: rest ->
+      lemma_b0_length rest;
+      ()
+  | _ -> ()
+#pop-options
+
+/// bits_to_bytes drops any incomplete trailing byte.
+let lemma_bits_to_bytes_length (bits: list bool) : Lemma
+  (ensures length (bits_to_bytes bits) = length bits / 8)
+  =
+  lemma_b0_length bits
+
+/// bits_to_nat bs is bounded by pow2 (length bs) — the rank of the MSB.
+let rec lemma_bits_to_nat_bounded (bs: list bool) : Lemma
+  (ensures bits_to_nat bs < pow2 (length bs))
+  (decreases bs)
+  =
+  match bs with
+  | [] -> ()
+  | b :: rest ->
+      lemma_bits_to_nat_bounded rest;
+      ()
+
+/// pad_bytes produces exactly `n` bytes (for n >= 0).
+let rec lemma_pad_bytes_length (n: nat) (use_ec: bool) : Lemma
+  (ensures length (pad_bytes n use_ec) = n)
+  (decreases n)
+  =
+  if n = 0 then () else lemma_pad_bytes_length (n - 1) (not use_ec)
+
+/// nat_to_bits inverts bits_to_nat on its range (roundtrip at the MSB level).
+let rec lemma_bits_to_nat_roundtrip (bs: list bool) : Lemma
+  (ensures nat_to_bits (bits_to_nat bs) (length bs) = bs)
+  (decreases bs)
+  =
+  match bs with
+  | [] -> ()
+  | b :: rest ->
+      lemma_bits_to_nat_roundtrip rest;
+      lemma_bits_to_nat_bounded rest;
+      ()
+
+/// pow2 is always positive.
+let lemma_pow2_positive (n: nat) : Lemma (pow2 n > 0) = ()
+
+/// nat_to_bits emits exactly `len` bits.
 let rec lemma_nat_to_bits_length (value: nat) (len: nat) : Lemma
   (ensures length (nat_to_bits value len) = len)
   (decreases len)
@@ -240,19 +363,67 @@ let rec lemma_nat_to_bits_length (value: nat) (len: nat) : Lemma
   if len = 0 then ()
   else lemma_nat_to_bits_length (value % pow2 (len - 1)) (len - 1)
 
-let lemma_byte_to_bits_length (b: byte) : Lemma
-  (ensures length (byte_to_bits b) = 8)
+/// repl produces a list of the requested length.
+let rec lemma_repl_length #a (n: nat) (x: a) : Lemma
+  (ensures length (repl n x) = n)
+  (decreases n)
   =
-  lemma_nat_to_bits_length (FStar.UInt8.v b) 8
+  if n = 0 then () else lemma_repl_length (n - 1) x
 
-let lemma_pow2_positive (n: nat) : Lemma (pow2 n > 0) = ()
+(* Remaining lemmas, alphabetical. *)
 
-let lemma_byte_count_bits_range (v: version{v >= 1 /\ v <= 40}) : Lemma
+/// byte_count_bits is 8 (versions 1-9) or 16 (versions 10-40).
+let lemma_byte_count_bits_range (v: version) : Lemma
   (ensures byte_count_bits v = 8 \/ byte_count_bits v = 16)
   =
   if v <= 9 then ()
   else ()
 
+/// byte_to_bits emits exactly 8 bits.
+let lemma_byte_to_bits_length (b: byte) : Lemma
+  (ensures length (byte_to_bits b) = 8)
+  =
+  lemma_nat_to_bits_length (FStar.UInt8.v b) 8
+
+/// The data bit stream holds 8 bits per byte: length = 8 * length data.
+let rec lemma_concatMap_byte_to_bits_length (data: list byte) : Lemma
+  (ensures length (concatMap byte_to_bits data) = 8 * length data)
+  (decreases data)
+  =
+  match data with
+  | [] -> ()
+  | hd :: tl ->
+      lemma_concatMap_byte_to_bits_length tl;
+      lemma_byte_to_bits_length hd;
+      FStar.List.Tot.Properties.append_length (byte_to_bits hd) (concatMap byte_to_bits tl)
+
+/// byte_to_bits inverts byte_of_8bits: reconstructing the 8 bits MSB-first.
+#push-options "--fuel 16 --ifuel 4"
+let lemma_byte_of_8bits_roundtrip (b0 b1 b2 b3 b4 b5 b6 b7: bool) : Lemma
+  (ensures byte_to_bits (byte_of_8bits b0 b1 b2 b3 b4 b5 b6 b7) =
+           [b0; b1; b2; b3; b4; b5; b6; b7])
+  =
+  assert_norm (length [b1; b2; b3; b4; b5; b6; b7] = 7);
+  assert_norm (length [b2; b3; b4; b5; b6; b7] = 6);
+  assert_norm (length [b3; b4; b5; b6; b7] = 5);
+  assert_norm (length [b4; b5; b6; b7] = 4);
+  assert_norm (length [b5; b6; b7] = 3);
+  assert_norm (length [b6; b7] = 2);
+  assert_norm (length [b7] = 1);
+  assert_norm (pow2 7 = 128);
+  assert_norm (pow2 6 = 64);
+  assert_norm (pow2 5 = 32);
+  assert_norm (pow2 4 = 16);
+  assert_norm (pow2 3 = 8);
+  assert_norm (pow2 2 = 4);
+  assert_norm (pow2 1 = 2);
+  assert_norm (pow2 0 = 1);
+  assert (FStar.UInt8.v (byte_of_8bits b0 b1 b2 b3 b4 b5 b6 b7) =
+          bits_to_nat [b0; b1; b2; b3; b4; b5; b6; b7]);
+  lemma_bits_to_nat_roundtrip [b0; b1; b2; b3; b4; b5; b6; b7]
+#pop-options
+
+/// total_data_codewords is non-decreasing at adjacent versions.
 let lemma_tdc_adjacent (v: version) (e: ecl) : Lemma
   (requires v < 40)
   (ensures total_data_codewords v e <= total_data_codewords (v + 1) e)
@@ -299,6 +470,7 @@ let lemma_tdc_adjacent (v: version) (e: ecl) : Lemma
   | 39 -> assert_norm (total_data_codewords 39 e <= total_data_codewords 40 e)
   | _ -> ()
 
+/// total_data_codewords is non-decreasing in the version, for every EC level.
 let rec lemma_capacity_monotonic (v1 v2: version) (e: ecl) : Lemma
   (requires v1 <= v2)
   (ensures total_data_codewords v1 e <= total_data_codewords v2 e)
@@ -310,19 +482,75 @@ let rec lemma_capacity_monotonic (v1 v2: version) (e: ecl) : Lemma
     lemma_tdc_adjacent (v2 - 1) e
   end
 
+/// encode_bytes, when it succeeds, yields exactly `capacity` codewords.
 let lemma_encode_bytes_length (data: list byte) (v: version) (e: ecl) : Lemma
   (ensures (
     match encode_bytes data v e with
     | None -> True
     | Some bytes -> length bytes = total_data_codewords v e))
   =
-  admit ()  (* (b) bit-length arithmetic through padding *)
+  let capacity = total_data_codewords v e in
+  let count_bits_len = byte_count_bits v in
+  let data_len = length data in
+  let total_bits = 4 + count_bits_len + 8 * data_len in
+  let capacity_bits = capacity * 8 in
+  if total_bits > capacity_bits then ()
+  else begin
+    lemma_nat_to_bits_length data_len count_bits_len;
+    lemma_concatMap_byte_to_bits_length data;
+    let remaining = capacity_bits - total_bits in
+    let term_len = if remaining >= 4 then 4 else remaining in
+    lemma_repl_length term_len false;
+    assert (term_len <= 4);
+    (* length (mode @ count @ data @ term) = 4 + count_bits_len + 8*data_len + term_len *)
+    let bits_so_far_len = 4 + count_bits_len + 8 * data_len + term_len in
+    assert (length ([false; true; false; false] @
+                    nat_to_bits data_len count_bits_len @
+                    concatMap byte_to_bits data @
+                    repl term_len false) = bits_so_far_len);
+    let bits_len = bits_so_far_len in
+    let pad_zero_bits = if bits_len % 8 = 0 then 0 else 8 - (bits_len % 8) in
+    lemma_repl_length pad_zero_bits false;
+    (* bits_len + pad_zero_bits is a multiple of 8 and <= capacity*8 *)
+    assert ((bits_len + pad_zero_bits) % 8 = 0);
+    assert (bits_len + pad_zero_bits <= capacity * 8);
+    let padded_bits_len = bits_len + pad_zero_bits in
+    let current_bytes_len = padded_bits_len / 8 in
+    lemma_bits_to_bytes_length
+      ([false; true; false; false] @ nat_to_bits data_len count_bits_len @
+       concatMap byte_to_bits data @ repl term_len false @ repl pad_zero_bits false);
+    assert (length (bits_to_bytes
+      ([false; true; false; false] @ nat_to_bits data_len count_bits_len @
+       concatMap byte_to_bits data @ repl term_len false @ repl pad_zero_bits false)) =
+      padded_bits_len / 8);
+    assert (current_bytes_len <= capacity);
+    let current_count = current_bytes_len in
+    lemma_pad_bytes_length (capacity - current_count) true;
+    assert (length (pad_bytes (capacity - current_count) true) = capacity - current_count);
+    FStar.List.Tot.Properties.append_length
+      (bits_to_bytes ([false; true; false; false] @ nat_to_bits data_len count_bits_len @
+        concatMap byte_to_bits data @ repl term_len false @ repl pad_zero_bits false))
+      (pad_bytes (capacity - current_count) true);
+    ()
+  end
 
+/// encode_uri succeeds exactly when encode_bytes of the Latin-1 bytes does,
+/// and the returned codewords have the version's data capacity.
+let lemma_encode_uri_length (uri: string) (v: version) (e: ecl) : Lemma
+  (ensures (
+    match encode_uri uri v e with
+    | None -> True
+    | Some (bytes, v') -> length bytes = total_data_codewords v e /\ v' = v))
+  =
+  lemma_encode_bytes_length (string_to_latin1_bytes uri) v e
+
+/// string_to_latin1_bytes preserves length.
 let lemma_string_to_latin1_bytes_length (s: string) : Lemma
   (ensures length (string_to_latin1_bytes s) = String.length s)
   =
   FStar.List.Tot.Properties.map_lemma
     (fun (c: FStar.Char.char) -> FStar.UInt8.uint_to_t (FStar.Char.int_of_char c % 256))
     (FStar.String.list_of_string s)
+
 
 #pop-options

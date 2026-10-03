@@ -36,7 +36,7 @@ let byte_count_bits (v: version) : nat =
 let total_data_codewords (v: version) (e: ecl) : nat =
   match v, e with
   | 1, L -> 19  | 1, M -> 16  | 1, Q -> 13  | 1, H -> 9
-  | 2, L -> 37  | 2, M -> 34  | 2, Q -> 31  | 2, H -> 27
+  | 2, L -> 34  | 2, M -> 28  | 2, Q -> 22  | 2, H -> 16
   | 3, L -> 55  | 3, M -> 44  | 3, Q -> 34  | 3, H -> 26
   | 4, L -> 80  | 4, M -> 64  | 4, Q -> 48  | 4, H -> 36
   | 5, L -> 108 | 5, M -> 86  | 5, Q -> 62  | 5, H -> 46
@@ -69,11 +69,11 @@ let total_data_codewords (v: version) (e: ecl) : nat =
   |32, L -> 1955|32, M -> 1541|32, Q -> 1115|32, H -> 845
   |33, L -> 2071|33, M -> 1631|33, Q -> 1171|33, H -> 901
   |34, L -> 2191|34, M -> 1725|34, Q -> 1231|34, H -> 961
-  |35, L -> 2309|35, M -> 1812|35, Q -> 1286|35, H -> 986
+  |35, L -> 2306|35, M -> 1812|35, Q -> 1286|35, H -> 986
   |36, L -> 2434|36, M -> 1914|36, Q -> 1354|36, H -> 1054
-  |37, L -> 2563|37, M -> 1992|37, Q -> 1426|37, H -> 1096
-  |38, L -> 2699|38, M -> 2102|38, Q -> 1502|38, H -> 1142
-  |39, L -> 2809|39, M -> 2216|39, Q -> 1582|39, H -> 1222
+  |37, L -> 2566|37, M -> 1992|37, Q -> 1426|37, H -> 1096
+  |38, L -> 2702|38, M -> 2102|38, Q -> 1502|38, H -> 1142
+  |39, L -> 2812|39, M -> 2216|39, Q -> 1582|39, H -> 1222
   |40, L -> 2956|40, M -> 2334|40, Q -> 1666|40, H -> 1276
   | _, _ -> 0
 #pop-options
@@ -253,11 +253,62 @@ let lemma_byte_count_bits_range (v: version{v >= 1 /\ v <= 40}) : Lemma
   if v <= 9 then ()
   else ()
 
-let lemma_capacity_monotonic (v1 v2: version) (e: ecl) : Lemma
-  (requires v1 <= v2 /\ v1 >= 1 /\ v2 <= 40)
-  (ensures total_data_codewords v1 e <= total_data_codewords v2 e)
+let lemma_tdc_adjacent (v: version) (e: ecl) : Lemma
+  (requires v < 40)
+  (ensures total_data_codewords v e <= total_data_codewords (v + 1) e)
   =
-  admit ()  (* (b) 40-version match table — verified by exhaustive test *)
+  match v with
+  | 1 -> assert_norm (total_data_codewords 1 e <= total_data_codewords 2 e)
+  | 2 -> assert_norm (total_data_codewords 2 e <= total_data_codewords 3 e)
+  | 3 -> assert_norm (total_data_codewords 3 e <= total_data_codewords 4 e)
+  | 4 -> assert_norm (total_data_codewords 4 e <= total_data_codewords 5 e)
+  | 5 -> assert_norm (total_data_codewords 5 e <= total_data_codewords 6 e)
+  | 6 -> assert_norm (total_data_codewords 6 e <= total_data_codewords 7 e)
+  | 7 -> assert_norm (total_data_codewords 7 e <= total_data_codewords 8 e)
+  | 8 -> assert_norm (total_data_codewords 8 e <= total_data_codewords 9 e)
+  | 9 -> assert_norm (total_data_codewords 9 e <= total_data_codewords 10 e)
+  | 10 -> assert_norm (total_data_codewords 10 e <= total_data_codewords 11 e)
+  | 11 -> assert_norm (total_data_codewords 11 e <= total_data_codewords 12 e)
+  | 12 -> assert_norm (total_data_codewords 12 e <= total_data_codewords 13 e)
+  | 13 -> assert_norm (total_data_codewords 13 e <= total_data_codewords 14 e)
+  | 14 -> assert_norm (total_data_codewords 14 e <= total_data_codewords 15 e)
+  | 15 -> assert_norm (total_data_codewords 15 e <= total_data_codewords 16 e)
+  | 16 -> assert_norm (total_data_codewords 16 e <= total_data_codewords 17 e)
+  | 17 -> assert_norm (total_data_codewords 17 e <= total_data_codewords 18 e)
+  | 18 -> assert_norm (total_data_codewords 18 e <= total_data_codewords 19 e)
+  | 19 -> assert_norm (total_data_codewords 19 e <= total_data_codewords 20 e)
+  | 20 -> assert_norm (total_data_codewords 20 e <= total_data_codewords 21 e)
+  | 21 -> assert_norm (total_data_codewords 21 e <= total_data_codewords 22 e)
+  | 22 -> assert_norm (total_data_codewords 22 e <= total_data_codewords 23 e)
+  | 23 -> assert_norm (total_data_codewords 23 e <= total_data_codewords 24 e)
+  | 24 -> assert_norm (total_data_codewords 24 e <= total_data_codewords 25 e)
+  | 25 -> assert_norm (total_data_codewords 25 e <= total_data_codewords 26 e)
+  | 26 -> assert_norm (total_data_codewords 26 e <= total_data_codewords 27 e)
+  | 27 -> assert_norm (total_data_codewords 27 e <= total_data_codewords 28 e)
+  | 28 -> assert_norm (total_data_codewords 28 e <= total_data_codewords 29 e)
+  | 29 -> assert_norm (total_data_codewords 29 e <= total_data_codewords 30 e)
+  | 30 -> assert_norm (total_data_codewords 30 e <= total_data_codewords 31 e)
+  | 31 -> assert_norm (total_data_codewords 31 e <= total_data_codewords 32 e)
+  | 32 -> assert_norm (total_data_codewords 32 e <= total_data_codewords 33 e)
+  | 33 -> assert_norm (total_data_codewords 33 e <= total_data_codewords 34 e)
+  | 34 -> assert_norm (total_data_codewords 34 e <= total_data_codewords 35 e)
+  | 35 -> assert_norm (total_data_codewords 35 e <= total_data_codewords 36 e)
+  | 36 -> assert_norm (total_data_codewords 36 e <= total_data_codewords 37 e)
+  | 37 -> assert_norm (total_data_codewords 37 e <= total_data_codewords 38 e)
+  | 38 -> assert_norm (total_data_codewords 38 e <= total_data_codewords 39 e)
+  | 39 -> assert_norm (total_data_codewords 39 e <= total_data_codewords 40 e)
+  | _ -> ()
+
+let rec lemma_capacity_monotonic (v1 v2: version) (e: ecl) : Lemma
+  (requires v1 <= v2)
+  (ensures total_data_codewords v1 e <= total_data_codewords v2 e)
+  (decreases (v2 - v1))
+  =
+  if v1 = v2 then ()
+  else begin
+    lemma_capacity_monotonic v1 (v2 - 1) e;
+    lemma_tdc_adjacent (v2 - 1) e
+  end
 
 let lemma_encode_bytes_length (data: list byte) (v: version) (e: ecl) : Lemma
   (ensures (

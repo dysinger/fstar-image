@@ -405,4 +405,47 @@ let lemma_matrix_size (v: version) : Lemma
   (ensures matrix_size v = 17 + 4 * v + 2 * 4)
   = ()
 
+/// Alignment pattern is 5x5 (ISO 18004 §6.3.6).
+let lemma_alignment_pattern_size () : Lemma
+  (ensures length alignment_pattern = 5
+        /\ for_all (fun row -> length row = 5) alignment_pattern)
+  = assert_norm (length alignment_pattern = 5);
+    assert_norm (for_all (fun row -> length row = 5) alignment_pattern)
+
+/// Alignment pattern has dark corners.
+let lemma_alignment_pattern_corners () : Lemma
+  (ensures get_module alignment_pattern 0 0 = true
+        /\ get_module alignment_pattern 0 4 = true
+        /\ get_module alignment_pattern 4 0 = true
+        /\ get_module alignment_pattern 4 4 = true)
+  = assert_norm (get_module alignment_pattern 0 0 = true);
+    assert_norm (get_module alignment_pattern 0 4 = true);
+    assert_norm (get_module alignment_pattern 4 0 = true);
+    assert_norm (get_module alignment_pattern 4 4 = true)
+
+/// Mask pattern 0: (row + col) % 2 = 0 (ISO 18004 §8.8).
+let lemma_mask0 (row col: nat) : Lemma
+  (ensures mask_condition 0 row col = ((row + col) % 2 = 0))
+  = ()
+
+/// Mask pattern 1: row % 2 = 0 (ISO 18004 §8.8).
+let lemma_mask1 (row col: nat) : Lemma
+  (ensures mask_condition 1 row col = (row % 2 = 0))
+  = ()
+
+/// Mask pattern 2: col % 3 = 0 (ISO 18004 §8.8).
+let lemma_mask2 (row col: nat) : Lemma
+  (ensures mask_condition 2 row col = (col % 3 = 0))
+  = ()
+
+/// Mask pattern 3: (row + col) % 3 = 0 (ISO 18004 §8.8).
+let lemma_mask3 (row col: nat) : Lemma
+  (ensures mask_condition 3 row col = ((row + col) % 3 = 0))
+  = ()
+
+/// select_best_mask always returns a mask index in 0..7.
+let lemma_select_best_mask_bounds (m: qr_matrix) : Lemma
+  (ensures select_best_mask m >= 0 /\ select_best_mask m <= 7)
+  = ()
+
 #pop-options

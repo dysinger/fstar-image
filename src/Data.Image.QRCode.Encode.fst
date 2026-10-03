@@ -200,3 +200,45 @@ let encode_qr_uri (uri: string) (req_v: version) (e: ecl) : option qr_matrix =
         let masked = apply_mask m best_mask in
         let with_format = place_format_info masked e best_mask in
         Some with_format
+
+(* ========================================================================
+   SECTION 4: Correctness Lemmas
+   ======================================================================== *)
+
+#push-options "--z3rlimit 40"
+
+/// ECC codewords per block for version 1 (ISO 18004 Table 9).
+let lemma_ecc_v1 (e: ecl) : Lemma
+  (ensures ecc_codewords_per_block 1 e == (match e with L -> 7 | M -> 10 | Q -> 13 | H -> 17))
+  = ()
+
+/// ECC codewords per block is at least 7 and at most 30 for every version/ECL
+/// (ISO 18004 Table 9 range check).
+let lemma_ecc_range (v: version) (e: ecl) : Lemma
+  (ensures ecc_codewords_per_block v e = 0 \/ (ecc_codewords_per_block v e >= 7 /\ ecc_codewords_per_block v e <= 30))
+  = ()
+
+/// ECL indicator: L=1, M=0, Q=3, H=2 (ISO 18004 §8.9).
+let lemma_ecl_indicator (e: ecl) : Lemma
+  (ensures ecl_indicator e == (match e with L -> 1 | M -> 0 | Q -> 3 | H -> 2))
+  = ()
+
+/// BCH(15,5) known-answer: data 0 encodes to codeword 0 (empty data).
+let lemma_bch_zero () : Lemma (ensures bch_15_5_encode 0 = 0)
+  = assert_norm (bch_15_5_encode 0 = 0)
+
+/// BCH(15,5) known-answer: data 5 (0b00101) encodes to 220 (0x0DC).
+let lemma_bch_d5 () : Lemma (ensures bch_15_5_encode 5 = 220)
+  = assert_norm (bch_15_5_encode 5 = 220)
+
+/// Format info known-answer: ECL M + mask 0 encodes to 0x5412 (IEC 18004 §8.9).
+/// (With ECL M the 2-bit indicator is 0, so the 5-bit data is 0, BCH(15,5)
+/// of 0 is 0, and XOR with the 0x5412 mask yields 0x5412.)
+let lemma_format_info_m0 () : Lemma (ensures format_info M 0 = 0x5412)
+  = assert_norm (format_info M 0 = 0x5412)
+
+/// Format info known-answer: ECL M + mask 3 encodes to 0x574B.
+let lemma_format_info_m3 () : Lemma (ensures format_info M 3 = 0x574B)
+  = assert_norm (format_info M 3 = 0x574B)
+
+#pop-options

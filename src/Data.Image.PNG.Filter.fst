@@ -8,7 +8,6 @@
 module Data.Image.PNG.Filter
 
 open Data.Codec
-open FStar.Mul
 open Data.Image
 open FStar.List.Tot
 

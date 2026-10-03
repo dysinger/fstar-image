@@ -12,7 +12,6 @@ open Data.Image.PNG.Filter
 open Data.Image.PNG.Deflate
 open Data.Image.PNG.Zlib
 open Data.Codec
-open FStar.Mul
 open FStar.List.Tot
 open FStar.UInt32
 open FStar.UInt8
@@ -124,6 +123,15 @@ let rec lemma_take_bytes_length (n: nat) (xs: list byte)
   | [] -> ()
   | _ :: t -> lemma_take_bytes_length (n - 1) t
 
+/// Lemma: if [length xs >= n], then [take_bytes n xs] takes exactly [n] bytes.
+let rec lemma_take_bytes_n (n: nat) (xs: list byte) : Lemma
+  (requires length xs >= n)
+  (ensures (match take_bytes n xs with (t, r) -> length t = n /\ length r = length xs - n))
+  (decreases n)
+  = if n = 0 then ()
+    else match xs with
+      | h :: t -> lemma_take_bytes_n (n - 1) t
+
 /// Split flat pixel data into scanlines.
 /// Each scanline has scanline_len bytes (width * bytes_per_pixel).
 let rec split_scanlines (data: list byte) (scanline_len: nat)
@@ -134,8 +142,6 @@ let rec split_scanlines (data: list byte) (scanline_len: nat)
     let (line, rest) = take_bytes scanline_len data in
     if List.Tot.length line = scanline_len then (
       lemma_take_bytes_length scanline_len data;
-      (* Since scanline_len > 0 and length line = scanline_len,
-         length rest < length data, so termination holds. *)
       line :: split_scanlines rest scanline_len
     ) else
       []
@@ -157,6 +163,42 @@ let rec filter_all_scanlines (scanlines: list (list byte))
   | line :: rest ->
     filter_scanline_none line @ filter_all_scanlines rest
 
+/// Each filtered scanline is one byte longer than its input; the concatenated
+/// filtered length is [length (concat scanlines) + length scanlines].
+let rec lemma_filter_all_len (scanlines: list (list byte)) : Lemma
+  (ensures length (filter_all_scanlines scanlines)
+           == length (List.Tot.flatten scanlines) + length scanlines)
+  (decreases scanlines)
+  = match scanlines with
+    | [] -> ()
+    | line :: rest ->
+      List.Tot.Properties.append_length (filter_scanline_none line) (filter_all_scanlines rest);
+      List.Tot.Properties.append_length line (List.Tot.flatten rest);
+      lemma_filter_all_len rest
+
+/// Filter a flat data list of [h] rows × [sl] bytes, prepending the FilterNone
+/// Filter flat data row-major: emit the FilterNone byte (0x00) before pixel 0
+/// of every [sl]-wide row (i.e. at flat positions 0, sl, 2sl, …).  [i] is the
+/// flat position.  The output length is [length data + length data / sl].
+let rec filter_rows (sl: nat{sl > 0}) (data: list byte) (i: nat) : Tot (list byte) (decreases data) =
+  match data with
+  | [] -> []
+  | p :: tl ->
+    if i % sl = 0 then 0x00uy :: p :: filter_rows sl tl (i + 1)
+    else p :: filter_rows sl tl (i + 1)
+
+/// The filter byte is emitted exactly at flat positions divisible by [sl]; for
+/// [length data] a multiple of [sl], the output is [length data / sl] bytes
+/// longer than the input.
+let rec lemma_filter_rows_len (sl: nat{sl > 0}) (data: list byte) : Lemma
+  (requires length data % sl = 0)
+  (ensures length (filter_rows sl data 0) = length data + length data / sl)
+  (decreases data)
+  = match data with
+    | [] -> ()
+    | p :: tl ->
+      (lemma_filter_rows_len sl tl)
+
 (* ========================================================================
    SECTION 6: Full PNG Encoder
    ======================================================================== *)
@@ -168,28 +210,16 @@ let filtered_data_length (img: image) : nat =
 
 /// Encode an image as a complete PNG byte stream.
 /// v0.1: requires filtered data < 65536 bytes (single deflate stored block limit).
-/// Steps:
-///   1. PNG signature (8 bytes)
-///   2. IHDR chunk
-///   3. IDAT chunk: zlib(deflate(filtered scanlines))
-///   4. IEND chunk
-///
-/// Each scanline is prefixed with FilterNone byte (0x00).
-#push-options "--admit_smt_queries true"
 let encode_png (img: image{valid_image img /\ filtered_data_length img < 65536}) : list byte =
   let scanline_len : nat = img.width * bytes_per_pixel img.format in
-  let scanlines = split_scanlines img.data scanline_len in
-  let filtered = filter_all_scanlines scanlines in
-  (* SMT cannot prove length filtered = filtered_data_length img;
-     the relationship holds by construction (each scanline gets +1 filter byte). *)
-  assert (List.Tot.length filtered = filtered_data_length img);
+  let filtered = filter_rows scanline_len img.data 0 in
+  lemma_filter_rows_len scanline_len img.data;
   let compressed = zlib_wrap filtered in
   let idat_type : list byte = [0x49uy; 0x44uy; 0x41uy; 0x54uy] in  (* "IDAT" *)
   let idat_chunk = make_chunk idat_type compressed in
   let iend_type : list byte = [0x49uy; 0x45uy; 0x4Euy; 0x44uy] in  (* "IEND" *)
   let iend_chunk = make_chunk iend_type [] in
   png_signature @ (make_ihdr img) @ idat_chunk @ iend_chunk
-#pop-options
 
 (* ========================================================================
    SECTION 7: Lemmas
@@ -197,10 +227,7 @@ let encode_png (img: image{valid_image img /\ filtered_data_length img < 65536})
 
 /// The PNG encoder always produces a non-empty byte stream
 /// (at minimum: 8-byte signature + IHDR chunk + IDAT chunk + IEND chunk).
-#push-options "--admit_smt_queries true"
 let lemma_png_encode_valid (img: image{valid_image img /\ filtered_data_length img < 65536}) : Lemma
   (ensures encode_png img <> [])
   =
-  (* encode_png always starts with 8 non-empty signature bytes *)
-  ()
-#pop-options
+  assert_norm (png_signature <> [])

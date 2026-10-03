@@ -11,7 +11,6 @@ open Data.Image.QRCode.DataEncoding
 open Data.Image.QRCode.ReedSolomon
 open Data.Image.QRCode.Matrix
 open Data.Codec
-open FStar.Mul
 open FStar.List.Tot
 
 (* ========================================================================

@@ -6,7 +6,6 @@
 *)
 module Data.Image.QRCode.Types
 
-open FStar.Mul
 open FStar.List.Tot
 
 /// Error correction level (ISO 18004 §7.5.1)

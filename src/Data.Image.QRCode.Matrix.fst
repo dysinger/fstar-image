@@ -7,7 +7,6 @@
 module Data.Image.QRCode.Matrix
 open Data.Image.QRCode.Types
 open Data.Codec
-open FStar.Mul
 open FStar.List.Tot
 
 (* ========================================================================

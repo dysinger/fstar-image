@@ -105,31 +105,41 @@ let rs_generate_ec (data: list gf256) (num_ec: nat) : list gf256 =
 
 #push-options "--z3rlimit 40"
 
+/// poly_mul_x_alpha adds one coefficient (the leading x^{d+1} term).
+let rec lemma_poly_mul_x_alpha_length (poly: list gf256) (alpha: gf256) : Lemma
+  (requires length poly > 0)
+  (ensures length (poly_mul_x_alpha poly alpha) = length poly + 1)
+  (decreases poly)
+  =
+  match poly with
+  | [] -> ()
+  | [c] -> ()
+  | c0 :: rest ->
+    let rest' = poly_mul_x_alpha rest alpha in
+    lemma_poly_mul_x_alpha_length rest alpha;
+    ()
+
 /// The generator polynomial for n EC codewords has degree n,
 /// so it has exactly n+1 coefficients.
-let lemma_gen_poly_length (n: nat) : Lemma
+let rec lemma_gen_poly_length (n: nat) : Lemma
   (ensures length (rs_generator_poly n) = n + 1)
   (decreases n)
   =
-  admit ()  (* (b) poly_mul_x_alpha length *)
+  if n = 0 then ()
+  else
+    (lemma_gen_poly_length (n - 1);
+     lemma_poly_mul_x_alpha_length (rs_generator_poly (n - 1)) (gf_exp (n - 1)))
 
-/// The generator polynomial is monic — leading coefficient is 1.
+/// The generator polynomial is non-empty: it has at least its leading 1.
 let lemma_gen_poly_monic (n: nat{n > 0}) : Lemma
   (ensures length (rs_generator_poly n) > 0)
   =
-  admit ()  (* (b) leading coefficient *)
+  lemma_gen_poly_length n
 
 /// RS encoding produces exactly num_ec error correction codewords.
 let lemma_rs_ec_length (data: list gf256) (num_ec: nat) : Lemma
   (ensures length (rs_generate_ec data num_ec) = num_ec)
   =
   admit ()  (* (b) SMT limitation on loop invariant *)
-
-/// If the generator has the correct roots, then evaluating the encoded
-/// polynomial at alpha^i (for i < num_ec) gives zero. This is the core
-/// RS property: generator polynomial has alpha^i as roots for i < n.
-/// Category (a) TODO: polynomial evaluation not yet implemented.
-let lemma_gen_poly_root (i: nat) (n: nat{i < n}) : Lemma (True) =
-  admit ()  (* (a) TODO *)
 
 #pop-options

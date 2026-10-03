@@ -121,6 +121,39 @@ let rec lemma_gf_mul_go_bounded (p a b: nat) : Lemma
      lemma_xor8_bounded (a * 2) 0x11D;
      lemma_gf_mul_go_bounded p' a' (b / 2))
 
+/// The (doubling, reducing) step applied to the multiplicand each iteration.
+let red (a: nat) : nat = if a >= 128 then xor8 (a * 2) 0x11D else a * 2
+
+/// red stays < 256 when a < 256 (the whole point of the 0x11D fold).
+let lemma_red_bounded (a: nat) : Lemma (requires a < 256) (ensures red a < 256) =
+  lemma_xor8_bounded (a * 2) 0x11D
+
+/// Linearity of the accumulator: the p argument threads linearly.
+/// gf_mul_go p a b = xor8 p (gf_mul_go 0 a b).
+/// This is the foundation for both commutativity (6.3) and associativity (6.4).
+#push-options "--fuel 4 --ifuel 2"
+let rec lemma_gf_mul_go_linear (p a b: nat) : Lemma
+  (requires p < 256 /\ a < 256)
+  (ensures gf_mul_go p a b = xor8 p (gf_mul_go 0 a b))
+  (decreases b)
+  =
+  if b = 0 then (lemma_xor_zero8 p)
+  else
+    (let p' = if b % 2 = 1 then xor8 p a else p in
+     let a' = red a in
+     lemma_xor8_bounded p a;
+     lemma_red_bounded a;
+     lemma_gf_mul_go_linear p' a' (b / 2);
+     if b % 2 = 1 then begin
+       lemma_xor8_bounded 0 a;
+       lemma_gf_mul_go_linear (xor8 0 a) a' (b / 2);
+       lemma_xor_comm 0 a 8;
+       lemma_xor_zero8 a;
+       lemma_xor_assoc p a (gf_mul_go 0 a' (b / 2)) 8
+     end
+     else ())
+#pop-options
+
 /// GF(256) multiplication: shift-and-XOR (Russian peasant) reduction mod 0x11D.
 let gf_mul (a b: gf256) : gf256 =
   lemma_gf_mul_go_bounded 0 (U8.v a) (U8.v b);

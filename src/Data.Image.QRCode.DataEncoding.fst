@@ -270,6 +270,8 @@ let lemma_encode_bytes_length (data: list byte) (v: version) (e: ecl) : Lemma
 let lemma_string_to_latin1_bytes_length (s: string) : Lemma
   (ensures length (string_to_latin1_bytes s) = String.length s)
   =
-  admit ()  (* (b) string operations opaque to SMT *)
+  FStar.List.Tot.Properties.map_lemma
+    (fun (c: FStar.Char.char) -> FStar.UInt8.uint_to_t (FStar.Char.int_of_char c % 256))
+    (FStar.String.list_of_string s)
 
 #pop-options

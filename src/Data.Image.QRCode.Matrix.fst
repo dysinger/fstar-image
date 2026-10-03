@@ -186,6 +186,12 @@ let place_reserved_areas (m: qr_matrix) : qr_matrix =
    SECTION 7: Data Placement (Zigzag)
    ======================================================================== *)
 
+/// Local refined pow2 (returns a positive nat) — the codec's `pow2` returns
+/// `int` (Data.Codec.Types.pow2), which does not discharge the nonzero-divisor
+/// refinement for `val_ / pow2 (pos - 1)`.
+let rec pow2_pos (n: nat) : Tot (p:nat{p > 0}) (decreases n) =
+  if n = 0 then 1 else 2 * pow2_pos (n - 1)
+
 let rec bytes_to_bits (bs: list byte) : Tot (list bool) (decreases bs) =
   match bs with
   | [] -> []
@@ -193,7 +199,7 @@ let rec bytes_to_bits (bs: list byte) : Tot (list bool) (decreases bs) =
     let v = FStar.UInt8.v b in
     let rec byte_to_8_bits (val_: nat) (pos: nat) : Tot (list bool) (decreases pos) =
       if pos = 0 then []
-      else ((val_ / pow2 (pos - 1)) % 2 = 1) :: byte_to_8_bits val_ (pos - 1)
+      else ((val_ / pow2_pos (pos - 1)) % 2 = 1) :: byte_to_8_bits val_ (pos - 1)
     in
     byte_to_8_bits v 8 @ bytes_to_bits rest
 
@@ -360,13 +366,13 @@ let mask_penalty (m: qr_matrix) (mask_id: nat{0 <= mask_id /\ mask_id <= 7}) : n
   let penalty_n4 = 10 * deviation / 5 in
   penalty_n1 + penalty_n2 + penalty_n3 + penalty_n4
 
-(* Category (b): F* limitation — SMT cannot prove that iterating mask_ids 0-7
-   and only updating best_mid from those values yields a value in 0-7.
-   The computation is correct; we admit the SMT refinement check. *)
-#push-options "--admit_smt_queries true"
+/// Selects the mask (0-7) minimizing the ISO 18004 §8.8 penalty.
+/// `find_best` only ever assigns `best_mid := mid` when `mid < 8`, so the
+/// returned index is always in 0..7; the refinement follows from `mid`
+/// being bounded by the `mid >= 8` terminator.
 let select_best_mask (m: qr_matrix) : (r:nat{0 <= r /\ r <= 7}) =
-  let rec find_best (mid: nat) (best_mid: nat) (best_pen: nat)
-    : Tot nat (decreases (8 - mid)) =
+  let rec find_best (mid: nat{mid <= 8}) (best_mid: nat{best_mid <= 7}) (best_pen: nat)
+    : Tot (r:nat{r <= 7}) (decreases (8 - mid)) =
     if mid >= 8 then best_mid
     else
       let pen = mask_penalty m mid in
@@ -376,7 +382,6 @@ let select_best_mask (m: qr_matrix) : (r:nat{0 <= r /\ r <= 7}) =
         find_best (mid + 1) best_mid best_pen
   in
   find_best 0 0 (mask_penalty m 0)
-#pop-options
 
 (* ========================================================================
    SECTION 10: Matrix Correctness Lemmas

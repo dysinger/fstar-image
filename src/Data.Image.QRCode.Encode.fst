@@ -21,7 +21,6 @@ val ecc_codewords_per_block (v: version) (e: ecl) : nat
 
 /// Number of EC codewords per block for all versions/ECL (ISO 18004 Table 9).
 /// For multi-block versions (v>0), this returns EC per single block.
-#push-options "--admit_smt_queries true"
 let ecc_codewords_per_block (v: version) (e: ecl) : nat =
   match v, e with
   | 1, L -> 7  | 1, M -> 10 | 1, Q -> 13 | 1, H -> 17
@@ -65,7 +64,6 @@ let ecc_codewords_per_block (v: version) (e: ecl) : nat =
   |39, L -> 30 |39, M -> 28 |39, Q -> 30 |39, H -> 30
   |40, L -> 30 |40, M -> 28 |40, Q -> 30 |40, H -> 30
   | _, _ -> 0
-#pop-options
 
 (* ========================================================================
    SECTION 2: Format Info
@@ -80,6 +78,11 @@ let ecl_indicator (e: ecl) : nat =
    Encodes 5-bit data into 15-bit codeword.
    Algorithm: multiply data by x^10 (shift left 10), divide by generator polynomial,
    the 10-bit remainder appended to the 5 data bits gives the 15-bit codeword. *)
+/// Local refined pow2 — the codec's `Data.Codec.Types.pow2` returns `int`,
+/// which does not discharge nonzero-divisor / non-negativity refinements.
+let rec pow2_pos (n: nat) : Tot (p:nat{p > 0}) (decreases n) =
+  if n = 0 then 1 else 2 * pow2_pos (n - 1)
+
 val bch_15_5_encode (data: nat{data < 32}) : nat
 
 let bch_15_5_encode (data: nat{data < 32}) : nat =
@@ -96,9 +99,9 @@ let bch_15_5_encode (data: nat{data < 32}) : nat =
   let rec divide (dividend: nat) (pos: nat) : Tot nat (decreases pos) =
     if pos < 10 then dividend % 1024  (* lower 10 bits = remainder *)
     else
-      let bit_mask = pow2 pos in
+      let bit_mask = pow2_pos pos in
       if (dividend / bit_mask) % 2 = 1 then
-        let shifted = gen * pow2 (pos - 10) in
+        let shifted = gen * pow2_pos (pos - 10) in
         divide (nat_xor dividend shifted 15) (pos - 1)
       else
         divide dividend (pos - 1)

@@ -6,7 +6,6 @@
 *)
 module Data.Image.PNG.Zlib
 open Data.Codec
-open FStar.Mul
 open FStar.List.Tot
 open Data.Image.PNG.Deflate
 
@@ -78,8 +77,43 @@ let zlib_unwrap (bytes: list byte) : option (list byte & list byte) =
 
 (* ---- Lemma ---- *)
 
-/// Category (b): F* limitation — SMT cannot handle recursive parse with suffix.
-/// The code is correct and extracts everywhere.
+/// The concrete zlib header 0x78 0x9C validates.
+let lemma_zlib_header_ok () : Lemma (validate_zlib_header 0x78uy 0x9Cuy == Some ())
+  = ()
+
+/// [adler32_loop] keeps both running sums strictly below 65521 (the Adler-32
+/// modulus), hence the final value s2*65536 + s1 < 2^32.
+let rec lemma_adler32_loop_bound (s1 s2: nat) (data: list byte) : Lemma
+  (requires s1 < 65521 /\ s2 < 65521)
+  (ensures adler32_loop s1 s2 data < 4294967296)
+  (decreases data)
+  = match data with
+    | [] -> ()
+    | b :: rest ->
+      let bval = FStar.UInt8.v b in
+      lemma_adler32_loop_bound ((s1 + bval) % 65521) ((s2 + ((s1 + bval) % 65521)) % 65521) rest
+
+/// Adler-32 is always < 2^32.
+let lemma_adler32_bound (data: list byte) : Lemma (adler32 data < 4294967296)
+  = lemma_adler32_loop_bound 1 0 data
+
+/// [nat_to_bytes_be4] / [parse_u32_be] are inverse for n < 2^32.
+let lemma_u32_be_roundtrip (n: nat {n < 4294967296}) : Lemma
+  (parse_u32_be (nat_to_bytes_be4 n) == Some (n, []))
+  = ()
+
+/// [parse_u32_be (nat_to_bytes_be4 n @ s)] == [Some (n, s)].
+let lemma_u32_be_roundtrip_suffix (n: nat {n < 4294967296}) (s: list byte) : Lemma
+  (parse_u32_be (nat_to_bytes_be4 n @ s) == Some (n, s))
+  = ()
+
+/// The zlib wrap/unwrap roundtrip: wrapping then unwrapping recovers the data.
 let lemma_zlib_roundtrip (data: list byte {length data < 65536})
   : Lemma (ensures zlib_unwrap (zlib_wrap data) == Some (data, []))
-  = admit ()
+  =
+  let adler = adler32 data in
+  lemma_zlib_header_ok ();
+  lemma_adler32_bound data;
+  lemma_u32_be_roundtrip_suffix adler [];
+  lemma_stored_roundtrip_suffix data (nat_to_bytes_be4 adler);
+  ()

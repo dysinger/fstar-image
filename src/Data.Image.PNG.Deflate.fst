@@ -13,7 +13,6 @@ module Data.Image.PNG.Deflate
 
 open FStar.List.Tot
 open Data.Codec
-open FStar.Mul
 
 (* ========================================================================
    SECTION 1: Helpers
@@ -111,9 +110,24 @@ let rec lemma_take_all (bs: list byte) : Lemma
   | [] -> ()
   | _ :: tl -> lemma_take_all tl
 
+/// Lemma: [take_bytes (length data) (data @ s)] == [Some (data, s)].
+let rec lemma_take_bytes_append (data s: list byte) : Lemma
+  (ensures take_bytes (length data) (data @ s) == Some (data, s))
+  (decreases data)
+  =
+  match data with
+  | [] -> ()
+  | _ :: tl -> lemma_take_bytes_append tl s
+
 /// Lemma: u16_le_parse of nat_to_u16_le is identity for values < 65536.
 let lemma_u16_le_roundtrip (n: nat {n < 65536}) : Lemma
   (ensures u16_le_parse (nat_to_u16_le n) == Some (n, []))
+  =
+  ()
+
+/// Lemma: [u16_le_parse (nat_to_u16_le n @ s)] == [Some (n, s)].
+let lemma_u16_le_roundtrip_suffix (n: nat {n < 65536}) (s: list byte) : Lemma
+  (ensures u16_le_parse (nat_to_u16_le n @ s) == Some (n, s))
   =
   ()
 
@@ -126,4 +140,16 @@ let lemma_stored_roundtrip (data: list byte {length data < 65536}) : Lemma
   lemma_u16_le_roundtrip len;
   lemma_u16_le_roundtrip nlen;
   lemma_take_all data;
+  ()
+
+/// Lemma: roundtrip with an arbitrary suffix — encoding then parsing returns
+/// the original data with the suffix preserved.
+let lemma_stored_roundtrip_suffix (data s: list byte {length data < 65536}) : Lemma
+  (ensures parse_stored_block (deflate_stored_block data true @ s) == Some (data, s))
+  =
+  let len = length data in
+  let nlen = 65535 - len in
+  lemma_u16_le_roundtrip_suffix len (nat_to_u16_le nlen @ data @ s);
+  lemma_u16_le_roundtrip_suffix nlen (data @ s);
+  lemma_take_bytes_append data s;
   ()

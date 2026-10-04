@@ -181,29 +181,54 @@ let rec filter_all_scanlines (scanlines: list (list byte))
 let filtered_data_length (img: image) : nat =
   img.height * (img.width * bytes_per_pixel img.format + 1)
 
+/// [filtered_data_length] equals the actual length of the filtered byte
+/// stream: [filter_all_scanlines (split_scanlines data sl)] has length
+/// [height * (sl + 1)] when [data] is exactly [height] scanlines of [sl]
+/// bytes ([sl > 0]).  Proved by induction on [height].
+let rec lemma_filtered_length_eq (data: list byte) (height sl: nat)
+  : Lemma
+    (requires List.Tot.length data = height * sl /\ sl > 0)
+    (ensures
+      List.Tot.length (filter_all_scanlines (split_scanlines data sl))
+      = height * (sl + 1))
+    (decreases height)
+  =
+  if height = 0 then ()
+  else
+    let (line, rest) = take_bytes sl data in
+    lemma_take_bytes_n sl data;
+    lemma_filtered_length_eq rest (height - 1) sl;
+    append_length (filter_scanline_none line)
+      (filter_all_scanlines (split_scanlines rest sl))
+
+/// The encoder's filtered stream length equals [filtered_data_length img].
+let lemma_encode_filtered_length
+  (img: image{valid_image img /\ filtered_data_length img < 65536})
+  : Lemma
+    (ensures
+      List.Tot.length
+        (filter_all_scanlines
+          (split_scanlines img.data (img.width * bytes_per_pixel img.format)))
+      = filtered_data_length img /\
+      filtered_data_length img < 65536)
+  =
+  let sl = img.width * bytes_per_pixel img.format in
+  lemma_filtered_length_eq img.data img.height sl;
+  ()
+
 /// Encode an image as a complete PNG byte stream.
 /// v0.1: requires filtered data < 65536 bytes (single deflate stored block limit).
-///
-/// The [zlib_wrap filtered] call requires [length filtered < 65536]; this follows
-/// from [filtered_data_length img < 65536] (input) plus [length filtered ==
-/// filtered_data_length img].  That equality is the recurring F* non-linear-
-/// arithmetic + recursive-unfold wall (fstar-proofs §2/§8/§30): SMT cannot chain
-/// [length (split_scanlines data sl) = length data / sl] through [length data =
-/// width*height*bpp] to [= height] without `FStar.Math.Lemmas.multiple_division_lemma`,
-/// and the [split_scanlines] termination fact needs [length line > 0].  The types
-/// (requires/ensures) remain fully checked; only the SMT query is admitted.
-#push-options "--admit_smt_queries true"
 let encode_png (img: image{valid_image img /\ filtered_data_length img < 65536}) : list byte =
   let scanline_len : nat = img.width * bytes_per_pixel img.format in
   let scanlines = split_scanlines img.data scanline_len in
   let filtered = filter_all_scanlines scanlines in
+  lemma_encode_filtered_length img;
   let compressed = zlib_wrap filtered in
   let idat_type : list byte = [0x49uy; 0x44uy; 0x41uy; 0x54uy] in  (* "IDAT" *)
   let idat_chunk = make_chunk idat_type compressed in
   let iend_type : list byte = [0x49uy; 0x45uy; 0x4Euy; 0x44uy] in  (* "IEND" *)
   let iend_chunk = make_chunk iend_type [] in
   png_signature @ (make_ihdr img) @ idat_chunk @ iend_chunk
-#pop-options
 
 (* ========================================================================
    SECTION 7: Lemmas

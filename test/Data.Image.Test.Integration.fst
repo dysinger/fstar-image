@@ -407,6 +407,10 @@ let _lemma_take_bytes_length = lemma_take_bytes_length
 let _lemma_take_bytes_n = lemma_take_bytes_n
 (** [lemma_png_encode_valid] *)
 let _lemma_png_encode_valid = lemma_png_encode_valid
+(** [lemma_filtered_length_eq] *)
+let _lemma_filtered_length_eq = lemma_filtered_length_eq
+(** [lemma_encode_filtered_length] *)
+let _lemma_encode_filtered_length = lemma_encode_filtered_length
 
 
 (* ========================================================================

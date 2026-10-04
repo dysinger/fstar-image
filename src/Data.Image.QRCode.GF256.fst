@@ -291,15 +291,33 @@ let gf_mul (a b: gf256) : gf256 =
 /// The 16-bit XOR (products of two bytes are < 2^16).
 let xor16 (a b: nat) : nat = nat_xor a b 16
 
-/// Bit k of x (0 or 1): (x / 2^k) %% 2.  pow2_pos is refined positive so the
-/// divisor is never zero.
-let pow2_pos (n: nat) : p: nat{p > 0} =
-  match pow2 n with
-  | 0 -> 1  (* unreachable; pow2 n = 2^n > 0 *)
-  | m -> m
+/// 2^n, refined positive (needed as a divisor for [bit] and the carry-less
+/// product shift).  Defined recursively (NOT a match over [pow2]) so that
+/// [pow2_pos (n+1) = 2 * pow2_pos n] is available to the normalizer.
+let rec pow2_pos (n: nat) : Tot (p: nat{p > 0}) (decreases n) =
+  if n = 0 then 1 else 2 * pow2_pos (n - 1)
+
+/// pow2_pos (n+1) = 2 · pow2_pos n.
+let lemma_pow2_pos_succ (n: nat) : Lemma (pow2_pos (n + 1) = 2 * pow2_pos n) = ()
+
+/// pow2_pos is monotone: n <= m implies pow2_pos n <= pow2_pos m.
+let rec lemma_pow2_pos_mono (n m: nat) : Lemma
+  (requires n <= m) (ensures pow2_pos n <= pow2_pos m) (decreases m)
+  = if n = m then () else (lemma_pow2_pos_mono n (m-1); ())
 
 /// Bit k of x (0 or 1): (x / 2^k) %% 2.
 let bit (x: nat) (k: nat) : nat = (x / pow2_pos k) % 2
+
+/// Bit k+1 of x equals bit k of x/2 (shifting out the low bit).
+#push-options "--z3rlimit 160"
+let lemma_bit_shift (x k: nat) : Lemma
+  (bit x (k + 1) = bit (x / 2) k)
+  =
+  lemma_pow2_succ k;
+  lemma_pow2_pos_succ k;
+  FStar.Math.Lemmas.division_multiplication_lemma x 2 (pow2_pos k);
+  ()
+#pop-options
 
 /// Position-indexed carry-less product accumulator: for each position pos
 /// (from k-1 down to 0) with bit pos of [b] set, XOR [a · 2^pos] into [acc].
@@ -332,16 +350,16 @@ let reduce (c: nat) : nat = reduce_from c 14
 /// If [c] < 2^9 (no bit at or above [d] ≥ 9 is set), then reduce_from c d
 /// drops straight through the no-op positions to reduce_from c 8.
 let rec lemma_reduce_from_drop_high (c: nat) (d: nat) : Lemma
-  (requires d >= 8 /\ c < pow2 9)
+  (requires d >= 8 /\ c < pow2_pos 9)
   (ensures reduce_from c d = reduce_from c 8)
   (decreases d)
   =
   if d = 8 then ()
   else begin
-    assert_norm (pow2 9 = 512);
-    lemma_pow2_mono 9 d;
-    assert (c < pow2 d);
-    assert (c / pow2 d = 0);
+    assert_norm (pow2_pos 9 = 512);
+    lemma_pow2_pos_mono 9 d;
+    assert (c < pow2_pos d);
+    assert (c / pow2_pos d = 0);
     lemma_reduce_from_drop_high c (d - 1)
   end
 #pop-options
@@ -355,10 +373,10 @@ let lemma_reduce_double (a: nat) : Lemma
   (requires a < 256)
   (ensures reduce (2 * a) = red a)
   =
-  if a < 128 then (assert_norm (pow2 9 = 512); ())
+  if a < 128 then (assert_norm (pow2_pos 9 = 512); ())
   else begin
-    assert_norm (pow2 8 = 256);
-    assert_norm (pow2 9 = 512);
+    assert_norm (pow2_pos 8 = 256);
+    assert_norm (pow2_pos 9 = 512);
     assert (2 * a < 512 /\ 2 * a >= 256);
     lemma_reduce_from_drop_high (2 * a) 14;
     assert (((2 * a) / 256) % 2 = 1);

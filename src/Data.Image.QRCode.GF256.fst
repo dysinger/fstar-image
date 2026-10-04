@@ -92,6 +92,42 @@ let lemma_xor_zero8 (a: nat) : Lemma
   assert_norm (pow2 8 = 256);
   lemma_xor_zero a 8
 
+/// Both LSBs vanish: nat_xor (2x) (2y) n = 2 · nat_xor x y (n-1) for n > 0.
+/// (The definitional unfold — both operands are even.)
+#push-options "--fuel 1 --ifuel 1"
+let lemma_nat_xor_double (x y: nat) (n: nat) : Lemma
+  (requires n > 0)
+  (ensures nat_xor (2 * x) (2 * y) n = 2 * nat_xor x y (n - 1))
+  = ()
+#pop-options
+
+/// Bit-disjoint XOR equals addition: nat_xor (pow2 j) (a · pow2(j+1)) w =
+/// pow2 j + a · pow2(j+1) when [a · pow2(j+1) < pow2 w] (the two terms do not
+/// share a bit).  Inducts on j, threading a decreasing width.
+#push-options "--fuel 2 --ifuel 3"
+let lemma_xor_bit_even_base (a: nat) (w: nat) : Lemma
+  (requires w > 1 /\ a < pow2 (w - 1))
+  (ensures nat_xor 1 (2 * a) w = 1 + 2 * a)
+  =
+  lemma_xor_zero a (w - 1);
+  lemma_xor_comm 0 a (w - 1);
+  FStar.Math.Lemmas.lemma_mod_mul_distr_l 2 a 2;
+  FStar.Math.Lemmas.lemma_div_exact (2 * a) 2
+#pop-options
+
+#push-options "--fuel 2 --ifuel 2"
+let rec lemma_xor_bit_even (a: nat) (j: nat) (w: nat) : Lemma
+  (requires w > j + 1 /\ a * pow2 (j + 1) < pow2 w)
+  (ensures nat_xor (pow2 j) (a * pow2 (j + 1)) w = pow2 j + a * pow2 (j + 1))
+  (decreases j)
+  =
+  if j = 0 then lemma_xor_bit_even_base a w
+  else begin
+    lemma_nat_xor_double (pow2 (j - 1)) (a * pow2 j) w;
+    lemma_xor_bit_even a (j - 1) (w - 1)
+  end
+#pop-options
+
 (* ========================================================================
    SECTION 2: The algorithmic gf_mul
    ======================================================================== *)

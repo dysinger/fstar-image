@@ -182,6 +182,36 @@ let lemma_xor_trunc_cancel (a: nat) : Lemma
   ()
 #pop-options
 
+/// pow2 is monotone: n <= m implies pow2 n <= pow2 m.
+let rec lemma_pow2_mono (n m: nat) : Lemma
+  (requires n <= m) (ensures pow2 n <= pow2 m) (decreases m)
+  = if n = m then () else (lemma_pow2_mono n (m-1); ())
+
+/// One-sided shift-out: nat_xor (2^n + x) y n = nat_xor x y n for x, y < 2^n.
+/// Bit 2^n of the first operand is OUTSIDE the n-bit window, so it is ignored.
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 120"
+let rec lemma_xor_shift_out (n: nat) (x y: nat) : Lemma
+  (requires x < pow2 n /\ y < pow2 n)
+  (ensures nat_xor (pow2 n + x) y n = nat_xor x y n)
+  (decreases n)
+  =
+  if n = 0 then lemma_xor_00 0
+  else (lemma_xor_shift_out (n-1) (x/2) (y/2); ())
+#pop-options
+
+/// Two-sided truncation: nat_xor (2^n + x) (2^n + y) n = nat_xor x y n for
+/// x, y < 2^n.  Both operands carry the 2^n bit, which is outside the n-bit
+/// window on BOTH sides (so nothing cancels — it is simply dropped).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 120"
+let rec lemma_xor_trunc_both (n: nat) (x y: nat) : Lemma
+  (requires x < pow2 n /\ y < pow2 n)
+  (ensures nat_xor (pow2 n + x) (pow2 n + y) n = nat_xor x y n)
+  (decreases n)
+  =
+  if n = 0 then lemma_xor_00 0
+  else (lemma_xor_trunc_both (n-1) (x/2) (y/2); ())
+#pop-options
+
 (* ========================================================================
    SECTION 2: The algorithmic gf_mul
    ======================================================================== *)
@@ -248,6 +278,103 @@ let rec lemma_gf_mul_go_linear (p a b: nat) : Lemma
 let gf_mul (a b: gf256) : gf256 =
   lemma_gf_mul_go_bounded 0 (U8.v a) (U8.v b);
   U8.uint_to_t (gf_mul_go 0 (U8.v a) (U8.v b))
+
+(* ========================================================================
+   SECTION 2b: Carry-less product (clmul) + reduction fold
+   ========================================================================
+   The position-indexed carry-less product [clmul a b] (a held fixed) and the
+   reduction [reduce] (descending fold of x^8 = 0x1D mod 0x11D) are the bridge
+   between gf_mul_go's Russian-peasant doubling loop and the symmetric
+   coefficient form that makes commutativity/associativity provable.
+   ======================================================================== *)
+
+/// The 16-bit XOR (products of two bytes are < 2^16).
+let xor16 (a b: nat) : nat = nat_xor a b 16
+
+/// Bit k of x (0 or 1): (x / 2^k) %% 2.  pow2_pos is refined positive so the
+/// divisor is never zero.
+let pow2_pos (n: nat) : p: nat{p > 0} =
+  match pow2 n with
+  | 0 -> 1  (* unreachable; pow2 n = 2^n > 0 *)
+  | m -> m
+
+/// Bit k of x (0 or 1): (x / 2^k) %% 2.
+let bit (x: nat) (k: nat) : nat = (x / pow2_pos k) % 2
+
+/// Position-indexed carry-less product accumulator: for each position pos
+/// (from k-1 down to 0) with bit pos of [b] set, XOR [a · 2^pos] into [acc].
+let rec clmul_go (acc a b k: nat) : Tot nat (decreases k) =
+  if k = 0 then acc
+  else
+    let pos = k - 1 in
+    clmul_go (if bit b pos = 1 then xor16 acc (a * pow2 pos) else acc) a b (k - 1)
+
+/// Carry-less product of two bytes (< 2^16): clmul a b = XOR_{k: bit_k b = 1} (a·2^k).
+let clmul (a b: nat) : nat = clmul_go 0 a b 8
+
+/// The primitive-polynomial muliplier 0x11D = x^8 + x^4 + x^3 + x^2 + 1.
+let refold : nat = 0x11D
+
+/// Reduction by a single descending pass over bit positions [d] .. 8:
+/// at position p, if bit p of [c] is set, fold c ^= refold · 2^(p−8) (the
+/// x^8 ↦ x^4+x^3+x^2+1 substitution shifted to clear bit p).  A single
+/// descending pass is correct because refold · 2^(p−8) only touches bits ≤ p.
+let rec reduce_from (c: nat) (d: nat) : Tot nat (decreases d) =
+  if d < 8 then c
+  else
+    let c' = if (c / pow2_pos d) % 2 = 1 then nat_xor c (refold * pow2 (d - 8)) 16 else c in
+    reduce_from c' (d - 1)
+
+/// Reduce a carry-less product (< 2^15) to < 256.
+let reduce (c: nat) : nat = reduce_from c 14
+
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 160"
+/// If [c] < 2^9 (no bit at or above [d] ≥ 9 is set), then reduce_from c d
+/// drops straight through the no-op positions to reduce_from c 8.
+let rec lemma_reduce_from_drop_high (c: nat) (d: nat) : Lemma
+  (requires d >= 8 /\ c < pow2 9)
+  (ensures reduce_from c d = reduce_from c 8)
+  (decreases d)
+  =
+  if d = 8 then ()
+  else begin
+    assert_norm (pow2 9 = 512);
+    lemma_pow2_mono 9 d;
+    assert (c < pow2 d);
+    assert (c / pow2 d = 0);
+    lemma_reduce_from_drop_high c (d - 1)
+  end
+#pop-options
+
+/// The reduction step applied to a doubled element agrees with the 16-bit
+/// reduction fold: reduce (2a) = red a for a < 256.  For a ≥ 128 both 2a and
+/// 0x11D carry bit 8, so the 16-bit fold cancels it (result < 256) while the
+/// 8-bit xor truncates it away — the two agree via two-sided truncation.
+#push-options "--z3rlimit 240"
+let lemma_reduce_double (a: nat) : Lemma
+  (requires a < 256)
+  (ensures reduce (2 * a) = red a)
+  =
+  if a < 128 then (assert_norm (pow2 9 = 512); ())
+  else begin
+    assert_norm (pow2 8 = 256);
+    assert_norm (pow2 9 = 512);
+    assert (2 * a < 512 /\ 2 * a >= 256);
+    lemma_reduce_from_drop_high (2 * a) 14;
+    assert (((2 * a) / 256) % 2 = 1);
+    assert (reduce_from (2 * a) 8 = nat_xor (2 * a) 0x11D 16);
+    let x = 2 * a - 256 in
+    assert (2 * a = 256 + x);
+    assert (0x11D = 256 + 29);
+    assert (x < 256);
+    (* red a = nat_xor (2a) 0x11D 8 = nat_xor x 29 8 (two-sided truncation) *)
+    lemma_xor_trunc_both 8 x 29;
+    (* nat_xor (2a) 0x11D 16 = nat_xor (2a%256) 29 8 = nat_xor x 29 8 (cancellation) *)
+    lemma_xor_trunc_cancel a;
+    assert ((2 * a) % 256 = x);
+    ()
+  end
+#pop-options
 
 (* ========================================================================
    SECTION 3: Field axiom lemmas — proven

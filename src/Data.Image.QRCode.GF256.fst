@@ -128,6 +128,60 @@ let rec lemma_xor_bit_even (a: nat) (j: nat) (w: nat) : Lemma
   end
 #pop-options
 
+/// nat_xor 0 0 k = 0 (both operands zero).  SMT will not unfold this unaided
+/// because it requires induction on the bit count; needed as the base case of
+/// the padding lemma below.
+let rec lemma_xor_00 (k: nat) : Lemma (nat_xor 0 0 k = 0) (decreases k)
+  = if k = 0 then () else lemma_xor_00 (k-1)
+
+/// Padding: if a, b < 2^n then nat_xor a b (n+k) = nat_xor a b n — all bits
+/// at position n and above are zero, so they contribute nothing.  (The
+/// high-half of the XOR over the wider width vanishes.)
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 60"
+let rec lemma_xor_pad (a b n k: nat) : Lemma
+  (requires a < pow2 n /\ b < pow2 n)
+  (ensures nat_xor a b (n + k) = nat_xor a b n)
+  (decreases n)
+  =
+  if n = 0 then lemma_xor_00 k
+  else lemma_xor_pad (a/2) (b/2) (n-1) k
+#pop-options
+
+/// Leading-bit cancellation: nat_xor (2^n + x) (2^n + y) (n+1) = nat_xor x y n
+/// for x, y < 2^n.  The leading bit 2^n is set in both operands, so it XORs to
+/// zero.  This is the structural fact behind the 16-bit-vs-8-bit agreement of
+/// the carry-less reduction fold.
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 120"
+let rec lemma_cancel_pow2 (n: nat) (x y: nat) : Lemma
+  (requires x < pow2 n /\ y < pow2 n)
+  (ensures nat_xor (pow2 n + x) (pow2 n + y) (n + 1) = nat_xor x y n)
+  (decreases n)
+  =
+  if n = 0 then lemma_xor_00 0
+  else (lemma_cancel_pow2 (n-1) (x/2) (y/2); ())
+#pop-options
+
+/// The bit-8 cancellation atom: nat_xor (2a) 0x11D 16 = nat_xor (2a %% 256)
+/// (0x11D %% 256) 8 for a in [128, 256).  Both 2a and 0x11D have bit 8 set,
+/// so the 16-bit XOR cancels it (result < 256) while the 8-bit XOR truncates
+/// it away — the two agree because bit 8 cancels.  (Chains pad + cancel.)
+#push-options "--z3rlimit 160"
+let lemma_xor_trunc_cancel (a: nat) : Lemma
+  (requires 128 <= a /\ a < 256)
+  (ensures nat_xor (2 * a) 0x11D 16 = nat_xor (2 * a % 256) (0x11D % 256) 8)
+  =
+  assert_norm (pow2 8 = 256);
+  assert_norm (pow2 9 = 512);
+  assert (2 * a = 256 + (2 * a - 256));
+  assert (0x11D = 256 + 29);
+  let x = 2 * a - 256 in
+  lemma_cancel_pow2 8 x 29;
+  lemma_xor_pad (256 + x) (256 + 29) 9 7;
+  assert ((2 * a) % 256 = 2 * a - 256);
+  assert (0x11D % 256 = 29);
+  ()
+#pop-options
+
 (* ========================================================================
    SECTION 2: The algorithmic gf_mul
    ======================================================================== *)

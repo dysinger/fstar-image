@@ -347,3 +347,26 @@ let lemma_paeth_predictor_selects (a b c: byte)
            \/ paeth_predictor a b c == c) =
   let r = paeth_predictor a b c in
   assert (r == a \/ r == b \/ r == c)
+
+(* ========================================================================
+   SECTION 8: RFC known-answer vectors (ISO/IEC 15948:2004 §9)
+   ======================================================================== *)
+
+/// Known-answer: the ISO/IEC 15948 §9.2 Sub-filter example on the scanline
+/// [1; 2; 3; 4; 5] with bpp = 1.  Each Left-neighbour is the previous raw
+/// byte (0 for the first), so every sub is 1: the filtered row is the filter
+/// byte 0x01 followed by five 0x01 bytes.
+let lemma_filter_sub_sample_row () : Lemma
+  (ensures filter_scanline FilterSub [0x01uy; 0x02uy; 0x03uy; 0x04uy; 0x05uy] [] 1
+           == [0x01uy; 0x01uy; 0x01uy; 0x01uy; 0x01uy; 0x01uy])
+  = assert_norm (filter_scanline FilterSub [0x01uy; 0x02uy; 0x03uy; 0x04uy; 0x05uy] [] 1
+                  == [0x01uy; 0x01uy; 0x01uy; 0x01uy; 0x01uy; 0x01uy])
+
+/// Known-answer: the ISO/IEC 15948 §9.3 Up filter on a row with a zero
+/// (first) previous row passes the row through unchanged (each byte minus the
+/// corresponding previous byte 0 is itself), plus the filter byte 0x02.
+let lemma_filter_up_sample_row () : Lemma
+  (ensures filter_scanline FilterUp [0x0Auy; 0x0Buy; 0x0Cuy] [0x00uy; 0x00uy; 0x00uy] 1
+           == [0x02uy; 0x0Auy; 0x0Buy; 0x0Cuy])
+  = assert_norm (filter_scanline FilterUp [0x0Auy; 0x0Buy; 0x0Cuy] [0x00uy; 0x00uy; 0x00uy] 1
+                  == [0x02uy; 0x0Auy; 0x0Buy; 0x0Cuy])

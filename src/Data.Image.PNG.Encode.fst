@@ -29,6 +29,14 @@ let lemma_signature_length () : Lemma
   (ensures List.Tot.length png_signature = 8)
   = assert_norm (List.Tot.length png_signature = 8)
 
+/// Known-answer: the PNG signature is the ISO/IEC 15948:2004 §5.2 eight-byte
+/// sequence 89 50 4E 47 0D 0A 1A 0A (0x89 "PNG" CR LF 0x1A LF).
+let lemma_png_signature_bytes () : Lemma
+  (ensures png_signature == [
+     0x89uy; 0x50uy; 0x4Euy; 0x47uy; 0x0Duy; 0x0Auy; 0x1Auy; 0x0Auy ])
+  = assert_norm (png_signature == [
+      0x89uy; 0x50uy; 0x4Euy; 0x47uy; 0x0Duy; 0x0Auy; 0x1Auy; 0x0Auy ])
+
 (* ========================================================================
    SECTION 2: Chunk Assembly
    ======================================================================== *)

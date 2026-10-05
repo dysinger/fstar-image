@@ -395,6 +395,67 @@ let lemma_reduce_double (a: nat) : Lemma
 #pop-options
 
 (* ========================================================================
+   SECTION 2c: Russian-peasant carry-less product (raw_mul) + the
+   accumulator-linearity / product-bound atoms
+   ========================================================================
+   [raw_mul_go] is [gf_mul_go]'s body with plain [a * 2] in place of the
+   reducing [red a] — i.e. the *unreduced* carry-less product.  It is
+   bit-identical to the position-indexed [clmul] over all 65536 pairs
+   (Python-verified), and its [gf_mul_go]-shaped body makes the bridge
+   [gf_mul_go p a b = xor8 p (reduce (raw_mul a b))] structurally trivial
+   (only the [red] ↔ [*2] substitution plus [reduce] linearity to discharge).
+   ======================================================================== *)
+
+/// Russian-peasant carry-less product accumulator (no reduction).
+let rec raw_mul_go (acc a b: nat) : Tot nat (decreases b) =
+  if b = 0 then acc else raw_mul_go (if b % 2 = 1 then xor16 acc a else acc) (a * 2) (b / 2)
+
+/// The unreduced carry-less product of two bytes (< 2^16).
+let raw_mul (a b: nat) : nat = raw_mul_go 0 a b
+
+/// (1) The product-bound atom: [raw_mul_go] preserves [a * b] (the per-step
+/// product is non-increasing: (2a)·(b/2) = a·b for even b, a·(b−1) < a·b for
+/// odd b).  For [a0 < 2^8] and [k <= 7] the multiplicand reached by k
+/// doublings stays < 2^15 — the sharp crossing: the 8th doubling (a0·2^8 <
+/// 2^16) is the dead, never-XORed value, so every XORed multiplicand is < 2^15.
+let lemma_raw_mul_doubles_bound (a0 k: nat) : Lemma
+  (requires a0 < 256 /\ k <= 7)
+  (ensures a0 * pow2 k < pow2 15)
+  =
+  assert_norm (pow2 7 = 128);
+  assert_norm (pow2 15 = 32768);
+  assert_norm (pow2 8 = 256);
+  lemma_pow2_mono k 7;
+  ()
+
+/// (2) Accumulator linearity of the unreduced product, carrying the CLOSED
+/// product invariant [a * b < 2^16] (not a fixed bound on [a], which doubles
+/// each step and so admits no fixed bound closed under the recurrence — this
+/// is the exact fix recorded in fstar-proofs §83).
+#push-options "--fuel 4 --ifuel 2"
+let rec lemma_raw_mul_go_linear (acc a b: nat) : Lemma
+  (requires acc < pow2 16 /\ a * b < pow2 16)
+  (ensures raw_mul_go acc a b = xor16 acc (raw_mul_go 0 a b))
+  (decreases b)
+  =
+  if b = 0 then (lemma_xor_zero acc 16)
+  else begin
+    let acc' = if b % 2 = 1 then xor16 acc a else acc in
+    let a' = a * 2 in
+    lemma_xor_bounded acc a 16;
+    lemma_raw_mul_go_linear acc' a' (b / 2);
+    if b % 2 = 1 then begin
+      lemma_xor_bounded 0 a 16;
+      lemma_raw_mul_go_linear (xor16 0 a) a' (b / 2);
+      lemma_xor_comm 0 a 16;
+      lemma_xor_zero a 16;
+      lemma_xor_assoc acc a (raw_mul_go 0 a' (b / 2)) 16
+    end
+    else ()
+  end
+#pop-options
+
+(* ========================================================================
    SECTION 3: Field axiom lemmas — proven
    ======================================================================== *)
 

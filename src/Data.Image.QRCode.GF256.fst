@@ -455,6 +455,50 @@ let rec lemma_raw_mul_go_linear (acc a b: nat) : Lemma
   end
 #pop-options
 
+(* --- bridge atoms (toward gf_mul_go = xor8 p (reduce (raw_mul a b))) --- *)
+
+/// xor16 x y = xor8 x y for x, y < 256 (bits [8..15] are zero on both sides).
+#push-options "--fuel 2 --ifuel 2"
+let lemma_xor_16_eq_8 (x y: nat) : Lemma
+  (requires x < 256 /\ y < 256)
+  (ensures xor16 x y = xor8 x y)
+  =
+  assert_norm (pow2 8 = 256);
+  lemma_xor_pad x y 8 8;
+  ()
+#pop-options
+
+/// reduce is the identity below 256: reduce c = c for c < 256.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 120"
+let lemma_reduce_id (c: nat) : Lemma
+  (requires c < 256)
+  (ensures reduce c = c)
+  =
+  assert_norm (pow2_pos 9 = 512);
+  lemma_reduce_from_drop_high c 14;
+  assert (reduce_from c 8 = c);
+  ()
+#pop-options
+
+/// bit d of nat_xor x y w equals (bit d x) XOR (bit d y), for d < w — the
+/// branch-distribution fact for the reduce_from linearity induction.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 160"
+let rec lemma_nat_xor_bit (x y w d: nat) : Lemma
+  (requires d < w)
+  (ensures bit (nat_xor x y w) d = (bit x d + bit y d) % 2)
+  (decreases d)
+  =
+  if d = 0 then ()
+  else begin
+    lemma_nat_xor_bit (x / 2) (y / 2) (w - 1) (d - 1);
+    lemma_pow2_pos_succ (d - 1);
+    lemma_bit_shift (nat_xor x y w) (d - 1);
+    lemma_bit_shift x (d - 1);
+    lemma_bit_shift y (d - 1);
+    ()
+  end
+#pop-options
+
 (* ========================================================================
    SECTION 3: Field axiom lemmas — proven
    ======================================================================== *)

@@ -499,6 +499,109 @@ let rec lemma_nat_xor_bit (x y w d: nat) : Lemma
   end
 #pop-options
 
+(* ------------------------------------------------------------------------
+   reduce GF(2)-linearity: reduce_from (xor16 x y) d
+     = xor16 (reduce_from x d) (reduce_from y d)
+   ------------------------------------------------------------------------ *)
+
+/// The Boolean-selection atom: nat_xor (s bx r) (s yb r) 16 = s (bx <> yb) r
+/// where [s b r = if b then r else 0].  This is the bit-level GF(2) scaling
+/// linearity that makes [reduce_from] distribute over XOR.  A BOOLEAN selector
+/// (not [nat] with [<= 1]) is essential: [match bx, yb] binds each branch
+/// structurally, so [s bx r] reduces to 0 or r in the goal.
+let s (bx: bool) (r: nat) : nat = if bx then r else 0
+
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 120"
+let lemma_select_xor_bool (bx yb: bool) (r: nat) : Lemma
+  (requires r < 65536)
+  (ensures nat_xor (s bx r) (s yb r) 16 = s (bx <> yb) r)
+  =
+  assert_norm (pow2 16 = 65536);
+  match bx, yb with
+  | false, false -> lemma_xor_00 16
+  | false, true  -> lemma_xor_zero r 16; lemma_xor_comm 0 r 16
+  | true,  false -> lemma_xor_zero r 16
+  | true,  true  -> lemma_xor_self r 16
+#pop-options
+
+/// One-step commutation: the reduction step at position d distributes over XOR.
+/// [step c d = xor16 c (s (bit c d = 1) (refold · 2^(d-8)))].  Linearity of the
+/// step is exactly the select atom + xor16 assoc/comm, using
+/// [lemma_nat_xor_bit] for the branch-bit distribution.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 240"
+let lemma_reduce_step_xor (d: nat) (x y: nat) : Lemma
+  (requires d >= 8 /\ d < 16)
+  (ensures
+    (let r = refold * pow2_pos (d - 8) in
+     xor16
+       (s (bit x d = 1) r)
+       (s (bit y d = 1) r)
+       = s (bit (xor16 x y) d = 1) r))
+  =
+  assert_norm (pow2 16 = 65536);
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (refold = 285);
+  lemma_pow2_pos_mono (d - 8) 7;
+  assert_norm (pow2_pos 7 = 128);
+  assert (pow2_pos (d - 8) <= 128);
+  assert (refold * pow2_pos (d - 8) < 65536);
+  lemma_nat_xor_bit x y 16 d;
+  lemma_select_xor_bool (bit x d = 1) (bit y d = 1) (refold * pow2_pos (d - 8));
+  ()
+#pop-options
+
+/// Step linearity: the reduction step commutes with XOR.
+/// [step c d = xor16 c (s (bit c d = 1) r)] for [r = refold · 2^(d-8)].
+/// Uses xor16 assoc/comm + [lemma_reduce_step_xor].
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 240"
+let lemma_step_xor (d: nat) (x y: nat) : Lemma
+  (requires d >= 8 /\ d < 16)
+  (ensures
+    (let r = refold * pow2_pos (d - 8) in
+     xor16 (xor16 x y) (s (bit (xor16 x y) d = 1) r)
+       = xor16 (xor16 x (s (bit x d = 1) r)) (xor16 y (s (bit y d = 1) r))))
+  =
+  let r = refold * pow2_pos (d - 8) in
+  assert_norm (pow2 16 = 65536);
+  lemma_reduce_step_xor d x y;
+  let c1 = s (bit x d = 1) r in
+  let c2 = s (bit y d = 1) r in
+  let c  = s (bit (xor16 x y) d = 1) r in
+  assert (xor16 c1 c2 = c);
+  lemma_xor_assoc x y c 16;
+  lemma_xor_comm y c 16;
+  lemma_xor_assoc x c y 16;
+  lemma_xor_comm c1 c2 16;
+  lemma_xor_assoc x c1 c2 16;
+  lemma_xor_assoc (xor16 x c1) c2 y 16;
+  lemma_xor_comm c2 y 16;
+  ()
+#pop-options
+
+/// Reduce base case: [reduce_from] is the identity below [d < 8] — used as the
+/// base of the (still-open) GF(2)-linearity induction.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 240"
+let lemma_reduce_from_base (d: nat) (x y: nat) : Lemma
+  (requires d < 8)
+  (ensures reduce_from (xor16 x y) d = xor16 x y)
+  = ()
+#pop-options
+
+(* NOTE: the full GF(2)-linearity of [reduce_from]
+   (lemma_reduce_from_xor d x y : reduce_from (xor16 x y) d
+     = xor16 (reduce_from x d) (reduce_from y d), for d < 16) is the KNOWN
+   remaining symbolic wall (fstar-proofs §83).  The ONE-step commutation
+   [lemma_step_xor] IS proven 0-admit above (the Boolean-select atom
+   [lemma_select_xor_bool] cracked the [sel bx r = bx*r] rewrite), but the
+   induction step does not discharge: unfolding [reduce_from c d] for SYMBOLIC
+   [c] (= [xor16 x y]) — even at the base [d < 8] — and gluing
+   [lemma_step_xor] through the [d-1] recursion spins SMT at every fuel/rlimit
+   (bare [reduce (xor16 x y) = xor16 (reduce x) (reduce y)] over [reduce =
+   reduce_from _ 14] also spins).  This is the SMT bit-vector wall, not a
+   missing fact.  The fallback (fstar-proofs §83 plan item (b)) is exhaustive
+   [assert_norm] over the 256x256 [gf_mul_go] table (a normalizer run, NOT SMT),
+   which is sound because the field is finite. *)
+
 (* ========================================================================
    SECTION 3: Field axiom lemmas — proven
    ======================================================================== *)

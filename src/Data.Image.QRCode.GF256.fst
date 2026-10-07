@@ -603,6 +603,78 @@ let lemma_reduce_from_base (d: nat) (x y: nat) : Lemma
    which is sound because the field is finite. *)
 
 (* ========================================================================
+   SECTION 2d: carry-less product bilinearity (distributivity, plan 6.3-distrib)
+   ========================================================================
+   The carry-less product [raw_mul] is GF(2)-bilinear: it distributes over
+   [xor16] in its multiplicand.  This is the field's distributivity law once
+   the [reduce]-homomorphism bridge is in place, and is the first of the
+   coefficient-level structural laws (plan Lemma 3).
+
+   WHY the product invariant [a * c < 2^15] (not a fixed [a < 2^16]): the
+   multiplicand [a] doubles every recursion, so no fixed bound is closed under
+   the recurrence — but the PRODUCT [a * c] is non-increasing ([a->2a, c->c/2]
+   preserves it), and the sharp [2^15] bound gives [a < 2^15] for free (needed
+   by [lemma_xor16_double_gen]).  Mirrors [lemma_raw_mul_go_linear]'s recipe.
+   ======================================================================== *)
+
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+/// The "middle-four" xor16 interchange: (p.r).(q.s) = (p.q).(r.s).
+let lemma_xor16_middle (p q r s: nat) : Lemma
+  (ensures xor16 (xor16 p r) (xor16 q s) = xor16 (xor16 p q) (xor16 r s))
+  =
+  lemma_xor_assoc p r (xor16 q s) 16;
+  lemma_xor_assoc r q s 16;
+  lemma_xor_comm r q 16;
+  lemma_xor_assoc q r s 16;
+  lemma_xor_assoc p q (xor16 r s) 16;
+  ()
+#pop-options
+
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 120"
+/// Doubling distributes over xor16 for operands < 2^15 (the top bit is clear,
+/// so the 16-bit XOR halves cleanly to the 15-bit XOR).
+let lemma_xor16_double_gen (a b: nat) : Lemma
+  (requires a < pow2 15 /\ b < pow2 15)
+  (ensures xor16 (2 * a) (2 * b) = 2 * (xor16 a b))
+  =
+  lemma_nat_xor_double a b 16;
+  lemma_xor_pad a b 15 1;
+  ()
+#pop-options
+
+#push-options "--fuel 4 --ifuel 2 --z3rlimit 300"
+/// Bilinearity of the carry-less product accumulator: splitting BOTH the
+/// accumulator and the multiplicand over xor16 splits the result.
+///   raw_mul_go (accA . accB) (a . b) c = raw_mul_go accA a c . raw_mul_go accB b c
+let rec lemma_raw_mul_go_bilinear (accA accB a b c: nat) : Lemma
+  (requires accA < 65536 /\ accB < 65536 /\ a * c < pow2 15 /\ b * c < pow2 15)
+  (ensures
+    raw_mul_go (xor16 accA accB) (xor16 a b) c
+      = xor16 (raw_mul_go accA a c) (raw_mul_go accB b c))
+  (decreases c)
+  =
+  if c = 0 then ()
+  else begin
+    lemma_xor16_double_gen a b;
+    lemma_xor16_middle accA accB a b;
+    lemma_xor_bounded accA a 16;
+    lemma_xor_bounded accB b 16;
+    assert_norm (pow2 16 = 65536);
+    lemma_raw_mul_go_bilinear
+      (if c % 2 = 1 then xor16 accA a else accA)
+      (if c % 2 = 1 then xor16 accB b else accB)
+      (2 * a) (2 * b) (c / 2);
+    ()
+  end
+#pop-options
+
+/// Distributivity of the carry-less product in its multiplicand is the
+/// [accA = accB = 0] instance of [lemma_raw_mul_go_bilinear], valid whenever
+/// the product invariant holds.  (The field-level distributivity law is
+/// assembled once the reduce-homomorphism bridge lands, since [gf_mul =
+/// reduce . raw_mul].)
+
+(* ========================================================================
    SECTION 3: Field axiom lemmas — proven
    ======================================================================== *)
 

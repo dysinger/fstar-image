@@ -675,6 +675,88 @@ let rec lemma_raw_mul_go_bilinear (accA accB a b c: nat) : Lemma
 /// reduce . raw_mul].)
 
 (* ========================================================================
+   SECTION 2e: the grid fold-swap (order-independence of a double XOR fold)
+   ========================================================================
+   The double XOR fold over a rectangular grid is order-independent: row-major
+   equals column-major.  This is the PURE combinatorial fact (plan item 2,
+   the double-sum index swap) that makes carry-less product symmetry a simple
+   reindexing, since both operands' set-bit expansions land on the same grid
+   of monomials [2^{i+j}].  No bit arithmetic here — only xor16 comm/assoc.
+   ======================================================================== *)
+
+/// XOR-fold over [j < m] with [i] fixed.
+let rec fold_row (f: nat -> nat -> nat) (i j: nat) : Tot nat (decreases j) =
+  if j = 0 then 0
+  else xor16 (f i (j - 1)) (fold_row f i (j - 1))
+
+/// A single row.
+let row (f: nat -> nat -> nat) (i m: nat) : nat = fold_row f i m
+
+/// Row-major fold over [i < n], [j < m].
+let rec grid (f: nat -> nat -> nat) (m i: nat) : Tot nat (decreases i) =
+  if i = 0 then 0
+  else xor16 (row f (i - 1) m) (grid f m (i - 1))
+
+/// The full row-major grid sum.
+let grid_sum (f: nat -> nat -> nat) (n m: nat) : nat = grid f m n
+
+/// XOR-fold over [i < n] with [j] fixed.
+let rec fold_col (f: nat -> nat -> nat) (n j: nat) : Tot nat (decreases n) =
+  if n = 0 then 0
+  else xor16 (f (n - 1) j) (fold_col f (n - 1) j)
+
+/// A single column.
+let col (f: nat -> nat -> nat) (n j: nat) : nat = fold_col f n j
+
+/// Column-major fold over [j < m], [i < n].
+let rec grid_t (f: nat -> nat -> nat) (n j: nat) : Tot nat (decreases j) =
+  if j = 0 then 0
+  else xor16 (col f n (j - 1)) (grid_t f n (j - 1))
+
+/// The full column-major grid sum.
+let grid_sum_t (f: nat -> nat -> nat) (n m: nat) : nat = grid_t f n m
+
+/// The empty-column (n = 0) transpose is 0.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_grid_t_zero (f: nat -> nat -> nat) (m: nat) : Lemma
+  (ensures grid_t f 0 m = 0) (decreases m)
+  =
+  if m = 0 then ()
+  else (lemma_grid_t_zero f (m - 1); lemma_xor_00 16)
+#pop-options
+
+/// Appending a full row to the transpose equals the transpose of one more row.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 1200"
+let rec lemma_row_append (f: nat -> nat -> nat) (i m: nat) : Lemma
+  (ensures xor16 (row f i m) (grid_sum_t f i m) = grid_sum_t f (i + 1) m)
+  (decreases m)
+  =
+  if m = 0 then (lemma_xor_00 16)
+  else begin
+    assert (row f i m = xor16 (f i (m - 1)) (row f i (m - 1)));
+    assert (grid_sum_t f i m = xor16 (col f i (m - 1)) (grid_sum_t f i (m - 1)));
+    assert (grid_sum_t f (i + 1) m = xor16 (col f (i + 1) (m - 1)) (grid_sum_t f (i + 1) (m - 1)));
+    assert (col f (i + 1) (m - 1) = xor16 (f i (m - 1)) (col f i (m - 1)));
+    lemma_row_append f i (m - 1);
+    lemma_xor16_middle (f i (m - 1)) (col f i (m - 1)) (row f i (m - 1)) (grid_sum_t f i (m - 1));
+    ()
+  end
+#pop-options
+
+/// THE fold-swap: row-major and column-major double XOR folds agree.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 1200"
+let rec lemma_grid_swap (f: nat -> nat -> nat) (n m: nat) : Lemma
+  (ensures grid_sum f n m = grid_sum_t f n m) (decreases n)
+  =
+  if n = 0 then lemma_grid_t_zero f m
+  else begin
+    lemma_grid_swap f (n - 1) m;
+    lemma_row_append f (n - 1) m;
+    ()
+  end
+#pop-options
+
+(* ========================================================================
    SECTION 3: Field axiom lemmas — proven
    ======================================================================== *)
 

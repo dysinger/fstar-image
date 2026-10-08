@@ -954,9 +954,12 @@ let rec shl_bits (a j: nat) (n: nat) : Tot nat (decreases n) =
   if n = 0 then 0
   else xor16 (shl_bits a j (n - 1)) (bit a (n - 1) * pow2_pos (n - 1 + j))
 
+/// The carry-less product grid: g a b i j = bit b j · (bit a i · 2^{i+j}).
+/// (bit b j factored first and parenthesised, so scaling it out is direct.)
+let clmul_grid (a b: nat) (i j: nat) : nat = bit b j * (bit a i * pow2_pos (i + j))
+
 /// The symmetric double sum: XOR_{i<8, j<8} bit a i · bit b j · 2^{i+j}.
-let dsum (a b: nat) : nat =
-  grid_sum (fun (i j: nat) -> bit a i * bit b j * pow2_pos (i + j)) 8 8
+let dsum (a b: nat) : nat = grid_sum (clmul_grid a b) 8 8
 
 /// Left-shift by k bits distributes over XOR (widening): shifting the XOR
 /// equals the XOR of the shifts, over a k-wider window.  No bound needed —
@@ -1019,6 +1022,318 @@ let rec lemma_shl_bits_eq_mul (a j n: nat) : Lemma
     lemma_xor16_shl j (bits_xor a (n - 1)) (bit a (n - 1) * pow2_pos (n - 1));
     ()
   end
+#pop-options
+
+/// a·2^j as a bit-decomposition XOR: a * 2^j = shl_bits a j 8 (a < 256).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let lemma_mul_eq_shl_bits (a j: nat) : Lemma
+  (requires a < 256 /\ j <= 8)
+  (ensures a * pow2_pos j = shl_bits a j 8)
+  =
+  assert_norm (pow2_pos 8 = 256);
+  lemma_bits_xor_recover a 8;
+  lemma_shl_bits_eq_mul a j 8;
+  ()
+#pop-options
+
+/// A 1D XOR-fold of [f i] over i < n.
+let rec fold_xor (f: nat -> nat) (n: nat) : Tot nat (decreases n) =
+  if n = 0 then 0
+  else xor16 (f (n - 1)) (fold_xor f (n - 1))
+
+/// Scaling (by b ∈ {0,1}) distributes out of the XOR-fold: XOR_i (b·f i) =
+/// b · XOR_i f i.  Case on b: 0 scales everything to 0 (XOR of zeros is 0),
+/// 1 is the identity.  Structural on n.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_fold_xor_scale (f: nat -> nat) (b n: nat) : Lemma
+  (requires (b = 0 \/ b = 1))
+  (ensures fold_xor (fun i -> b * f i) n = b * fold_xor f n)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_fold_xor_scale f b (n - 1);
+    if b = 0 then lemma_xor_00 16
+    else ()
+  end
+#pop-options
+
+/// fold_col g n j (XOR over i of g i j) equals the 1D fold_xor of (λ i. g i j).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_fold_col_eq_fold_xor (g: nat -> nat -> nat) (n j: nat) : Lemma
+  (ensures fold_col g n j = fold_xor (fun i -> g i j) n)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_fold_col_eq_fold_xor g (n - 1) j;
+    lemma_xor_comm (g (n - 1) j) (fold_xor (fun i -> g i j) (n - 1)) 16;
+    ()
+  end
+#pop-options
+
+/// fold_xor over bit a i · 2^{i+j} equals shl_bits a j n (the XOR operand order
+/// is swapped — fold_xor recurses f(n-1) ⊕ fold, shl_bits recurses fold ⊕ term —
+/// but xor16 is commutative, so they agree).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_fold_xor_eq_shl_bits (a j n: nat) : Lemma
+  (ensures fold_xor (fun i -> bit a i * pow2_pos (i + j)) n = shl_bits a j n)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_fold_xor_eq_shl_bits a j (n - 1);
+    lemma_xor_comm (bit a (n - 1) * pow2_pos (n - 1 + j)) (shl_bits a j (n - 1)) 16;
+    ()
+  end
+#pop-options
+
+/// Binary GF(2)-scale over XOR: xor16 (bc·x) (bc·y) = bc · xor16 x y, for
+/// bc ∈ {0,1}.  (bc=0: 0⊕0 = 0; bc=1: identity.)
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+let lemma_xor_scale2 (bc x y: nat) : Lemma
+  (requires (bc = 0 \/ bc = 1))
+  (ensures xor16 (bc * x) (bc * y) = bc * xor16 x y)
+  =
+  if bc = 0 then lemma_xor_00 16
+  else ()
+#pop-options
+
+/// The column of the carry-less grid equals bc · shl_bits a j n, for
+/// bc = bit b j.  Direct induction (no lambda-matching across fold bodies).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_fold_col_clmul (a b n j: nat) : Lemma
+  (requires (bit b j = 0 \/ bit b j = 1))
+  (ensures fold_col (clmul_grid a b) n j = bit b j * shl_bits a j n)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_fold_col_clmul a b (n - 1) j;
+    let bc = bit b j in
+    let x = bit a (n - 1) * pow2_pos (n - 1 + j) in
+    let y = shl_bits a j (n - 1) in
+    (* fold_col g n j = (bc·x) XOR (bc·y); shl_bits a j n = bc·x XOR bc·y = bc·(x XOR y). *)
+    lemma_xor_scale2 bc x y;
+    lemma_xor_comm x y 16;
+    ()
+  end
+#pop-options
+
+/// The column lemma: XOR_i bit a i · bit b j · 2^{i+j} = bit b j · (a·2^j).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let lemma_col_g (a b j: nat) : Lemma
+  (requires a < 256 /\ b < 256 /\ j < 8)
+  (ensures col (clmul_grid a b) 8 j = bit b j * (a * pow2_pos j))
+  =
+  lemma_bit_bounded b j;
+  lemma_fold_col_clmul a b 8 j;
+  lemma_mul_eq_shl_bits a j;
+  ()
+#pop-options
+
+/// pow2 n = pow2_pos n (identical recursive bodies).
+#push-options "--fuel 2 --ifuel 2"
+let rec lemma_pow2_eq_pow2_pos (n: nat) : Lemma (pow2 n = pow2_pos n) (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_pow2_eq_pow2_pos (n - 1);
+    lemma_pow2_succ (n - 1);
+    lemma_pow2_pos_succ (n - 1);
+    ()
+  end
+#pop-options
+
+/// xor16 0 x = x, for x < 2^16.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+let lemma_xor_zero16 (x: nat) : Lemma
+  (requires x < pow2 16)
+  (ensures xor16 0 x = x)
+  =
+  lemma_xor_comm 0 x 16;
+  lemma_xor_zero x 16
+#pop-options
+
+/// grid_t (clmul_grid a b) 8 k is < 2^16 (XOR of columns each < 2^15).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_grid_t_clmul_bounded (a b k: nat) : Lemma
+  (requires a < 256 /\ b < 256 /\ k <= 8)
+  (ensures grid_t (clmul_grid a b) 8 k < pow2 16)
+  (decreases k)
+  =
+  if k = 0 then assert_norm (pow2 16 = 65536)
+  else begin
+    lemma_grid_t_clmul_bounded a b (k - 1);
+    lemma_col_g a b (k - 1);
+    lemma_bit_bounded b (k - 1);
+    lemma_pow2_mono (k - 1) 7;
+    assert_norm (pow2 7 = 128);
+    assert_norm (pow2 16 = 65536);
+    assert (col (clmul_grid a b) 8 (k - 1) < pow2 16);
+    lemma_xor_bounded (col (clmul_grid a b) 8 (k - 1)) (grid_t (clmul_grid a b) 8 (k - 1)) 16;
+    ()
+  end
+#pop-options
+
+/// clmul_go acc a b k threads onto the column-major grid fold:
+/// clmul_go acc a b k = acc ⊕ grid_t (clmul_grid a b) 8 k.
+/// (Each level j-1 contributes col = bit b (j-1)·(a·2^{j-1}), exactly the
+/// clmul_go set-bit contribution, via lemma_col_g + pow2 = pow2_pos.)
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_clmul_go_grid_t (acc a b k: nat) : Lemma
+  (requires a < 256 /\ b < 256 /\ k <= 8 /\ acc < pow2 16)
+  (ensures clmul_go acc a b k = xor16 acc (grid_t (clmul_grid a b) 8 k))
+  (decreases k)
+  =
+  if k = 0 then lemma_xor_zero acc 16
+  else begin
+    let pos = k - 1 in
+    lemma_bit_bounded b pos;
+    lemma_pow2_eq_pow2_pos pos;
+    lemma_pow2_mono pos 7;
+    assert_norm (pow2 7 = 128);
+    assert_norm (pow2 16 = 65536);
+    assert (a <= 255);
+    assert (pow2 pos <= 128);
+    assert (a * pow2 pos <= 255 * 128);
+    assert (a * pow2 pos < pow2 16);
+    lemma_xor_bounded acc (a * pow2 pos) 16;
+    lemma_clmul_go_grid_t
+      (if bit b pos = 1 then xor16 acc (a * pow2 pos) else acc) a b (k - 1);
+    (* col = bit b pos · (a·2^pos) (via lemma_col_g) *)
+    lemma_col_g a b pos;
+    lemma_grid_t_clmul_bounded a b (k - 1);
+    if bit b pos = 1 then begin
+      (* col g 8 pos = a·pow2_pos pos = a·pow2 pos (pow2 = pow2_pos). *)
+      assert (col (clmul_grid a b) 8 pos = a * pow2 pos);
+      assert (grid_t (clmul_grid a b) 8 k = xor16 (a * pow2 pos) (grid_t (clmul_grid a b) 8 (k - 1)));
+      lemma_xor_assoc acc (a * pow2 pos) (grid_t (clmul_grid a b) 8 (k - 1)) 16;
+      lemma_xor_comm (a * pow2 pos) (grid_t (clmul_grid a b) 8 (k - 1)) 16
+    end
+    else begin
+      (* bit b pos = 0: col g 8 pos = 0, so grid_t g 8 k = 0 ⊕ grid_t g 8 (k-1). *)
+      assert (col (clmul_grid a b) 8 pos = 0);
+      lemma_xor_zero16 (grid_t (clmul_grid a b) 8 (k - 1));
+      ()
+    end
+  end
+#pop-options
+
+/// THE 2b bridge: clmul a b = dsum a b (the carry-less product is the
+/// symmetric double sum).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let lemma_clmul_dsum (a b: nat) : Lemma
+  (requires a < 256 /\ b < 256)
+  (ensures clmul a b = dsum a b)
+  =
+  assert_norm (pow2 16 = 65536);
+  lemma_clmul_go_grid_t 0 a b 8;
+  lemma_grid_swap (clmul_grid a b) 8 8;
+  lemma_grid_t_clmul_bounded a b 8;
+  lemma_xor_zero16 (grid_t (clmul_grid a b) 8 8);
+  ()
+#pop-options
+
+/// Transpose invariance of the grid sum: grid_sum (λ i j. f j i) n m =
+/// grid_sum f m n.  Proof: grid_sum (transpose f) = grid_sum_t (transpose f)
+/// (grid_swap) = grid_t (transpose f), and grid_t (transpose f) n m =
+/// grid f n m (each column of the transpose is a row of f) = grid_sum f m n.
+
+/// A column of the transpose is a row of f: XOR_{i<n} f j i.
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 300"
+let rec lemma_col_transpose (f: nat -> nat -> nat) (n j: nat) : Lemma
+  (ensures fold_col (fun i j -> f j i) n j = fold_row f j n)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_col_transpose f (n - 1) j;
+    lemma_xor_comm (f j (n - 1)) (fold_row f j (n - 1)) 16;
+    ()
+  end
+#pop-options
+
+/// grid_t (transpose f) n m = grid f n m (the transpose swaps the fold axes).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_grid_t_transpose (f: nat -> nat -> nat) (n m: nat) : Lemma
+  (ensures grid_t (fun i j -> f j i) n m = grid f n m)
+  (decreases m)
+  =
+  if m = 0 then ()
+  else begin
+    lemma_grid_t_transpose f n (m - 1);
+    lemma_col_transpose f n (m - 1);
+    ()
+  end
+#pop-options
+
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let lemma_grid_transpose (f: nat -> nat -> nat) (n m: nat) : Lemma
+  (ensures grid_sum (fun i j -> f j i) n m = grid_sum f m n)
+  =
+  lemma_grid_swap (fun i j -> f j i) n m;
+  lemma_grid_t_transpose f n m;
+  ()
+#pop-options
+
+/// Pointwise shuffling: clmul_grid a b j i = clmul_grid b a i j (just ·/+
+/// commutativity reorder).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let lemma_clmul_grid_swap (a b i j: nat) : Lemma
+  (clmul_grid a b j i = clmul_grid b a i j)
+  =
+  FStar.Math.Lemmas.swap_mul (bit a j) (bit b i);
+  FStar.Math.Lemmas.swap_mul (bit b i) (bit a j);
+  ()
+#pop-options
+
+/// fold_row / grid respect pointwise-equal []f[/] (extensionality).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_fold_row_ext (f g: nat -> nat -> nat) (i m: nat) : Lemma
+  (requires (forall x y. f x y = g x y))
+  (ensures fold_row f i m = fold_row g i m)
+  (decreases m)
+  =
+  if m = 0 then ()
+  else (lemma_fold_row_ext f g i (m - 1); ())
+#pop-options
+
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_grid_ext (f g: nat -> nat -> nat) (m i: nat) : Lemma
+  (requires (forall x y. f x y = g x y))
+  (ensures grid f m i = grid g m i)
+  (decreases i)
+  =
+  if i = 0 then ()
+  else begin
+    lemma_grid_ext f g m (i - 1);
+    lemma_fold_row_ext f g (i - 1) m;
+    ()
+  end
+#pop-options
+
+/// dsum is symmetric in (a,b): the index transposition (i,j) ↦ (j,i) is a
+/// renaming, and clmul_grid a b j i = clmul_grid b a i j.
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 500"
+let lemma_dsum_sym (a b: nat) : Lemma
+  (ensures dsum a b = dsum b a)
+  =
+  lemma_grid_transpose (clmul_grid a b) 8 8;
+  FStar.Classical.forall_intro_2 (lemma_clmul_grid_swap a b);
+  lemma_grid_ext (fun i j -> clmul_grid a b j i) (clmul_grid b a) 8 8;
+  ()
+#pop-options
+
+/// THE 2c symmetry: clmul a b = clmul b a.
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let lemma_clmul_sym (a b: nat) : Lemma
+  (requires a < 256 /\ b < 256)
+  (ensures clmul a b = clmul b a)
+  =
+  lemma_clmul_dsum a b;
+  lemma_clmul_dsum b a;
+  lemma_dsum_sym a b
 #pop-options
 
 (* ========================================================================

@@ -1337,6 +1337,325 @@ let lemma_clmul_sym (a b: nat) : Lemma
 #pop-options
 
 (* ========================================================================
+   SECTION 2g: polynomial-substitution reduction (the reduce homomorphism)
+   ========================================================================
+   [subst] performs a single round of the quotient substitution
+   [x^8 -> x^4+x^3+x^2+1] (= 0x1D, the non-leading part of 0x11D): each bit
+   8+j (j<8) of its argument is replaced by the monomial [2^j * 0x1D], and the
+   low 8 bits are kept.  [subst] is a LINEAR map (a single XOR fold of
+   bit-scaled monomials) — this is what makes the ADDITIVITY of the reduction
+   provable, where the old bit-indexed [reduce_from] descending fold spun SMT
+   (fstar-proofs §83).  [reduce_sub = subst ∘ subst] drops a <2^16 carry-less
+   product to <256 in two linear rounds (degree 15 -> 11 -> 7).
+   ======================================================================== *)
+
+/// The substituted monomial: n_sub = x^4+x^3+x^2+1 = 0x1D (x^8 == n_sub mod 0x11D).
+let n_sub : nat = 0x1D
+
+/// XOR-fold of the substituted high half: XOR_{j<8} bit_{8+j}(c) · (2^j · 0x1D).
+let rec subst_hi (c: nat) (j: nat) : Tot nat (decreases j) =
+  if j = 0 then 0
+  else xor16 (subst_hi c (j - 1)) (bit c (8 + (j - 1)) * (pow2_pos (j - 1) * n_sub))
+
+/// One round of polynomial substitution: keep the low 8 bits, substitute the high.
+let subst (c: nat) : nat = xor16 (bits_xor c 8) (subst_hi c 8)
+
+/// The polynomial-substitution reduction: two subst rounds (degree -> <8).
+let reduce_sub (c: nat) : nat = subst (subst c)
+
+/// Two-term GF(2)-scale: xor16 (bit x k · cst) (bit y k · cst) =
+/// (bit x k + bit y k) % 2 · cst, for cst < 2^16.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+let lemma_bit_xor_scale (x y k cst: nat) : Lemma
+  (requires cst < pow2 16)
+  (ensures xor16 (bit x k * cst) (bit y k * cst) = (bit x k + bit y k) % 2 * cst)
+  =
+  assert_norm (pow2 16 = 65536);
+  let bxv = bit x k in
+  let byv = bit y k in
+  lemma_bit_bounded x k;
+  lemma_bit_bounded y k;
+  if bxv = 0 && byv = 0 then lemma_xor_00 16
+  else if bxv = 1 && byv = 0 then (lemma_xor_zero cst 16)
+  else if bxv = 0 && byv = 1 then (lemma_xor_zero cst 16; lemma_xor_comm 0 cst 16)
+  else (lemma_xor_self cst 16)
+#pop-options
+
+/// subst_hi distributes over XOR (the high half is linear).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_subst_hi_xor (x y m: nat) : Lemma
+  (requires x < pow2 16 /\ y < pow2 16 /\ m <= 8)
+  (ensures subst_hi (xor16 x y) m = xor16 (subst_hi x m) (subst_hi y m))
+  (decreases m)
+  =
+  if m = 0 then lemma_xor_00 16
+  else begin
+    lemma_subst_hi_xor x y (m - 1);
+    let k = 7 + m in
+    let cst = pow2_pos (m - 1) * n_sub in
+    assert_norm (pow2 16 = 65536);
+    assert_norm (pow2_pos 8 = 256);
+    assert_norm (n_sub = 29);
+    lemma_pow2_pos_mono (m - 1) 8;
+    assert (pow2_pos (m - 1) <= 256);
+    assert (cst <= 256 * 29);
+    assert (cst < 65536);
+    assert (k < 16);
+    lemma_nat_xor_bit x y 16 k;
+    lemma_bit_xor_scale x y k cst;
+    assert (bit (xor16 x y) k * cst = xor16 (bit x k * cst) (bit y k * cst));
+    assert (subst_hi (xor16 x y) (m - 1) = xor16 (subst_hi x (m - 1)) (subst_hi y (m - 1)));
+    lemma_xor16_middle (subst_hi x (m-1)) (subst_hi y (m-1))
+                       (bit x k * cst) (bit y k * cst);
+    ()
+  end
+#pop-options
+
+/// bits_xor distributes over XOR (the low half is linear).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_bits_xor_xor (x y m: nat) : Lemma
+  (requires x < pow2 16 /\ y < pow2 16 /\ m <= 16)
+  (ensures bits_xor (xor16 x y) m = xor16 (bits_xor x m) (bits_xor y m))
+  (decreases m)
+  =
+  if m = 0 then lemma_xor_00 16
+  else begin
+    lemma_bits_xor_xor x y (m - 1);
+    let k = m - 1 in
+    let cst = pow2_pos k in
+    assert_norm (pow2 16 = 65536);
+    assert_norm (pow2_pos 15 = 32768);
+    lemma_pow2_pos_mono k 15;
+    assert (cst <= 32768);
+    lemma_nat_xor_bit x y 16 k;
+    lemma_bit_xor_scale x y k cst;
+    lemma_xor16_middle (bits_xor x (m-1)) (bits_xor y (m-1))
+                       (bit x k * cst) (bit y k * cst);
+    ()
+  end
+#pop-options
+
+/// THE additivity of a substitution round: subst (xor16 x y) = xor16 (subst x) (subst y).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_subst_xor (x y: nat) : Lemma
+  (requires x < pow2 16 /\ y < pow2 16)
+  (ensures subst (xor16 x y) = xor16 (subst x) (subst y))
+  =
+  lemma_bits_xor_xor x y 8;
+  lemma_subst_hi_xor x y 8;
+  lemma_xor16_middle (bits_xor x 8) (bits_xor y 8) (subst_hi x 8) (subst_hi y 8);
+  ()
+#pop-options
+
+/// bit c k = 0 when c < 2^k.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+let lemma_bit_zero (c k: nat) : Lemma
+  (requires c < pow2_pos k)
+  (ensures bit c k = 0)
+  =
+  FStar.Math.Lemmas.small_div c (pow2_pos k);
+  assert (c / pow2_pos k = 0);
+  ()
+#pop-options
+
+/// subst_hi c m = 0 when c < 256 (all bits >= 8 are zero).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+let rec lemma_subst_hi_zero (c m: nat) : Lemma
+  (requires c < 256)
+  (ensures subst_hi c m = 0)
+  (decreases m)
+  =
+  assert_norm (pow2_pos 8 = 256);
+  if m = 0 then ()
+  else begin
+    lemma_subst_hi_zero c (m - 1);
+    lemma_pow2_pos_mono 8 (8 + (m - 1));
+    assert (pow2_pos 8 <= pow2_pos (8 + (m - 1)));
+    assert_norm (pow2_pos 8 = 256);
+    assert (c < pow2_pos (8 + (m - 1)));
+    lemma_bit_zero c (8 + (m - 1));
+    assert (bit c (8 + (m - 1)) = 0);
+    assert (subst_hi c (m - 1) = 0);
+    lemma_xor_00 16;
+    ()
+  end
+#pop-options
+
+/// subst c = c for c < 256.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let lemma_subst_id (c: nat) : Lemma
+  (requires c < 256)
+  (ensures subst c = c)
+  =
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (pow2 16 = 65536);
+  lemma_bits_xor_recover c 8;
+  assert (bits_xor c 8 = c);
+  lemma_subst_hi_zero c 8;
+  assert (subst_hi c 8 = 0);
+  assert (c < pow2 16);
+  lemma_xor_zero c 16;
+  ()
+#pop-options
+
+/// subst_hi c m < 2^8 when c < 2^12 and m <= 8 (bits < 12 submit < 2^8;
+/// bits 12..15 are zero).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_subst_hi_bound_tight (c m: nat) : Lemma
+  (requires c < pow2_pos 12 /\ m <= 8)
+  (ensures subst_hi c m < pow2 8)
+  (decreases m)
+  =
+  assert_norm (pow2_pos 12 = 4096);
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (pow2 8 = 256);
+  assert_norm (n_sub = 29);
+  assert_norm (pow2_pos 7 = 128);
+  lemma_pow2_eq_pow2_pos 8;
+  if m = 0 then ()
+  else begin
+    lemma_subst_hi_bound_tight c (m - 1);
+    let k = 8 + (m - 1) in
+    if m - 1 < 4 then begin
+      lemma_bit_bounded c k;
+      lemma_pow2_pos_mono (m - 1) 3;
+      assert_norm (pow2_pos 3 = 8);
+      assert (pow2_pos (m - 1) <= 8);
+      assert (pow2_pos (m - 1) * n_sub <= 8 * 29);
+      assert (pow2_pos (m - 1) * n_sub < 256);
+      lemma_xor_bounded (subst_hi c (m - 1)) (bit c k * (pow2_pos (m - 1) * n_sub)) 8;
+      lemma_xor_pad (subst_hi c (m - 1)) (bit c k * (pow2_pos (m - 1) * n_sub)) 8 8;
+      ()
+    end
+    else begin
+      lemma_pow2_pos_mono 12 k;
+      assert (pow2_pos 12 <= pow2_pos k);
+      assert (c < pow2_pos k);
+      lemma_bit_zero c k;
+      lemma_subst_hi_bound_tight c (m - 1);
+      lemma_xor_pad (subst_hi c (m - 1)) 0 8 8;
+      lemma_pow2_mono 8 16;
+      assert_norm (pow2 8 = 256);
+      assert_norm (pow2 16 = 65536);
+      assert (subst_hi c (m - 1) < pow2 16);
+      lemma_xor_zero (subst_hi c (m - 1)) 16;
+      ()
+    end
+  end
+#pop-options
+
+/// subst_hi c m < 2^12 (the loose bound, for c < 2^16).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let rec lemma_subst_hi_bound (c m: nat) : Lemma
+  (requires m <= 8)
+  (ensures subst_hi c m < pow2 12)
+  (decreases m)
+  =
+  assert_norm (pow2 12 = 4096);
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (n_sub = 29);
+  if m = 0 then ()
+  else begin
+    lemma_subst_hi_bound c (m - 1);
+    lemma_bit_bounded c (8 + (m - 1));
+    lemma_pow2_pos_mono (m - 1) 7;
+    assert_norm (pow2_pos 7 = 128);
+    assert (pow2_pos (m - 1) <= 128);
+    let term = bit c (8 + (m - 1)) * (pow2_pos (m - 1) * n_sub) in
+    assert (term < 4096);
+    lemma_xor_pad (subst_hi c (m - 1)) term 12 4;
+    lemma_xor_bounded (subst_hi c (m - 1)) term 12;
+    ()
+  end
+#pop-options
+
+/// subst c < 2^12 when c < 2^16.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_subst_bound (c: nat) : Lemma
+  (requires c < pow2 16)
+  (ensures subst c < pow2 12)
+  =
+  assert_norm (pow2 12 = 4096);
+  assert_norm (pow2 16 = 65536);
+  assert_norm (pow2_pos 8 = 256);
+  lemma_bits_xor_bounded c 8;
+  lemma_subst_hi_bound c 8;
+  assert (subst_hi c 8 < 4096);
+  lemma_xor_pad (bits_xor c 8) (subst_hi c 8) 12 4;
+  lemma_xor_bounded (bits_xor c 8) (subst_hi c 8) 12;
+  ()
+#pop-options
+
+/// subst c < 256 when c < 2^12.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_subst_lt256 (c: nat) : Lemma
+  (requires c < pow2_pos 12)
+  (ensures subst c < 256)
+  =
+  assert_norm (pow2_pos 12 = 4096);
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (pow2 8 = 256);
+  lemma_pow2_eq_pow2_pos 8;
+  lemma_subst_hi_bound_tight c 8;
+  assert (subst_hi c 8 < 256);
+  lemma_bits_xor_bounded c 8;
+  assert (bits_xor c 8 < 256);
+  lemma_xor_bounded (bits_xor c 8) (subst_hi c 8) 8;
+  lemma_xor_pad (bits_xor c 8) (subst_hi c 8) 8 8;
+  ()
+#pop-options
+
+/// reduce_sub < 256 for c < 2^16 (the quotient map's image is a byte).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_reduce_sub_bounded (c: nat) : Lemma
+  (requires c < pow2 16)
+  (ensures reduce_sub c < 256)
+  =
+  assert_norm (pow2 16 = 65536);
+  assert_norm (pow2 12 = 4096);
+  assert_norm (pow2 8 = 256);
+  assert_norm (pow2_pos 8 = 256);
+  lemma_subst_bound c;
+  assert (subst c < 4096);
+  lemma_pow2_eq_pow2_pos 12;
+  assert_norm (pow2_pos 12 = 4096);
+  lemma_subst_lt256 (subst c);
+  ()
+#pop-options
+
+/// reduce_sub c = c for c < 256 (a byte is already reduced).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_reduce_sub_id (c: nat) : Lemma
+  (requires c < 256)
+  (ensures reduce_sub c = c)
+  =
+  assert_norm (pow2_pos 8 = 256);
+  assert (c < pow2_pos 8);
+  lemma_bits_xor_recover c 8;
+  assert (bits_xor c 8 = c);
+  lemma_subst_id c;
+  lemma_subst_id c;
+  ()
+#pop-options
+
+/// THE additivity of the reduction: reduce_sub (xor16 x y) = xor16 (reduce_sub x) (reduce_sub y).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_reduce_sub_xor (x y: nat) : Lemma
+  (requires x < pow2 16 /\ y < pow2 16)
+  (ensures reduce_sub (xor16 x y) = xor16 (reduce_sub x) (reduce_sub y))
+  =
+  lemma_subst_xor x y;
+  lemma_subst_bound x;
+  lemma_subst_bound y;
+  lemma_pow2_mono 12 16;
+  assert_norm (pow2 12 = 4096);
+  assert_norm (pow2 16 = 65536);
+  assert (subst x < pow2 16);
+  assert (subst y < pow2 16);
+  lemma_subst_xor (subst x) (subst y)
+#pop-options
+
+(* ========================================================================
    SECTION 3: Field axiom lemmas — proven
    ======================================================================== *)
 

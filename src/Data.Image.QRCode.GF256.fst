@@ -305,6 +305,21 @@ let rec lemma_pow2_pos_mono (n m: nat) : Lemma
   (requires n <= m) (ensures pow2_pos n <= pow2_pos m) (decreases m)
   = if n = m then () else (lemma_pow2_pos_mono n (m-1); ())
 
+/// pow2_pos a · pow2_pos b = pow2_pos (a+b).
+#push-options "--fuel 2 --ifuel 2"
+let rec lemma_pow2_pos_add (a b: nat) : Lemma
+  (ensures pow2_pos a * pow2_pos b = pow2_pos (a + b))
+  (decreases b)
+  =
+  if b = 0 then ()
+  else begin
+    lemma_pow2_pos_add a (b - 1);
+    lemma_pow2_pos_succ (a + b - 1);
+    lemma_pow2_pos_succ (b - 1);
+    ()
+  end
+#pop-options
+
 /// Bit k of x (0 or 1): (x / 2^k) %% 2.
 let bit (x: nat) (k: nat) : nat = (x / pow2_pos k) % 2
 
@@ -341,23 +356,22 @@ let rec bits_sum (a: nat) (n: nat) : Tot nat (decreases n) =
   else bits_sum a (n - 1) + bit a (n - 1) * pow2_pos (n - 1)
 
 /// bit k of x depends only on the low k+1 bits: bit x k = bit (x % 2^{k+1}) k.
-/// Derivation: x = q·2^{k+1} + r with r = x % 2^{k+1}; then x/2^k = 2q + r/2^k,
-/// so (x/2^k) % 2 = (r/2^k) % 2 (the 2q vanishes mod 2).
-#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+/// Derivation: x = q·2^{k+1} + r with r = x % 2^{k+1}, 2^{k+1} = 2·2^k; then
+/// x/2^k = 2q + r/2^k, so (x/2^k) % 2 = (r/2^k) % 2 (the 2q vanishes mod 2).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
 let lemma_bit_low (a k: nat) : Lemma
   (bit a k = bit (a % pow2_pos (k + 1)) k)
   =
   let p = pow2_pos k in
   let p1 = pow2_pos (k + 1) in
   let r = a % p1 in
+  let q = a / p1 in
   lemma_pow2_pos_succ k;
   FStar.Math.Lemmas.lemma_div_mod a p1;
-  (* a = p1 * q + r with q = a/p1, p1 = 2p.  So a/p = 2q + r/p exactly. *)
-  assert (a / p = (p1 * (a / p1)) / p + r / p);
-  assert (p1 * (a / p1) / p = 2 * (a / p1));
-  assert (a / p = 2 * (a / p1) + r / p);
-  (* (2q + r/p) % 2 = (r/p) % 2 *)
-  assert ((2 * (a / p1) + r / p) % 2 = (r / p) % 2);
+  (* a = 2p·q + r; a/p = (2p·q + r)/p = 2q + r/p (lemma_div_plus). *)
+  FStar.Math.Lemmas.lemma_div_plus r (2 * q) p;
+  (* (a / 2^k) % 2 = (2q + r/p) % 2 = (r/p) % 2 *)
+  FStar.Math.Lemmas.lemma_mod_plus (r / p) q 2;
   ()
 #pop-options
 
@@ -922,6 +936,87 @@ let rec lemma_grid_swap (f: nat -> nat -> nat) (n m: nat) : Lemma
   else begin
     lemma_grid_swap f (n - 1) m;
     lemma_row_append f (n - 1) m;
+    ()
+  end
+#pop-options
+
+(* ========================================================================
+   SECTION 2f: clmul symmetry via the bit-decomposition double sum
+   ========================================================================
+   [clmul a b] is the position-indexed carry-less product; expanding [a]
+   through its bit decomposition turns it into the symmetric double sum
+   [dsum a b = XOR_{i,j} bit_i a · bit_j b · 2^{i+j}].  Symmetry is then the
+   index transposition (i,j) ↦ (j,i) — a fold-swap, no bit arithmetic.
+   ======================================================================== *)
+
+/// The j-shifted XOR-fold of a's bits: XOR_{i<n} bit a i · 2^{i+j}.
+let rec shl_bits (a j: nat) (n: nat) : Tot nat (decreases n) =
+  if n = 0 then 0
+  else xor16 (shl_bits a j (n - 1)) (bit a (n - 1) * pow2_pos (n - 1 + j))
+
+/// The symmetric double sum: XOR_{i<8, j<8} bit a i · bit b j · 2^{i+j}.
+let dsum (a b: nat) : nat =
+  grid_sum (fun (i j: nat) -> bit a i * bit b j * pow2_pos (i + j)) 8 8
+
+/// Left-shift by k bits distributes over XOR (widening): shifting the XOR
+/// equals the XOR of the shifts, over a k-wider window.  No bound needed —
+/// XOR has no carry, and both sides capture the same shifted bits.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_nat_xor_shl (k x y w: nat) : Lemma
+  (ensures nat_xor x y w * pow2_pos k = nat_xor (x * pow2_pos k) (y * pow2_pos k) (w + k))
+  (decreases k)
+  =
+  if k = 0 then ()
+  else begin
+    lemma_pow2_pos_succ (k - 1);
+    lemma_nat_xor_shl (k - 1) x y w;
+    lemma_nat_xor_double (x * pow2_pos (k - 1)) (y * pow2_pos (k - 1)) (w + k);
+    ()
+  end
+#pop-options
+
+/// Fixed-width scalar distribute: (xor16 x y)·2^k = xor16 (x·2^k) (y·2^k)
+/// when both products stay < 2^16.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let lemma_xor16_shl (k x y: nat) : Lemma
+  (requires x * pow2_pos k < pow2 16 /\ y * pow2_pos k < pow2 16)
+  (ensures xor16 x y * pow2_pos k = xor16 (x * pow2_pos k) (y * pow2_pos k))
+  =
+  (* widen to 16+k, then trim the high k zero bits back to 16. *)
+  lemma_nat_xor_shl k x y 16;
+  lemma_xor_pad (x * pow2_pos k) (y * pow2_pos k) 16 k;
+  ()
+#pop-options
+
+/// bits_xor is bounded by 2^n (the XOR of n single-bit terms < 2^n).
+#push-options "--fuel 2 --ifuel 2"
+let lemma_bits_xor_bounded (a n: nat) : Lemma
+  (requires n <= 16)
+  (ensures bits_xor a n < pow2_pos n)
+  =
+  lemma_bits_xor_eq_sum a n;
+  lemma_bits_sum_bounded a n
+#pop-options
+
+/// shl_bits a n j = 2^j · bits_xor a n (the j-shift distributes over the XOR).
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_shl_bits_eq_mul (a j n: nat) : Lemma
+  (requires n + j <= 16)
+  (ensures shl_bits a j n = bits_xor a n * pow2_pos j)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_shl_bits_eq_mul a j (n - 1);
+    lemma_bits_xor_bounded a (n - 1);
+    lemma_bit_bounded a (n - 1);
+    lemma_pow2_pos_add (n - 1) j;
+    lemma_pow2_pos_mono (n - 1 + j) 15;
+    assert_norm (pow2_pos 15 = 32768);
+    assert_norm (pow2 16 = 65536);
+    assert (bits_xor a (n - 1) * pow2_pos j < pow2 16);
+    assert (bit a (n - 1) * pow2_pos (n - 1) * pow2_pos j < pow2 16);
+    lemma_xor16_shl j (bits_xor a (n - 1)) (bit a (n - 1) * pow2_pos (n - 1));
     ()
   end
 #pop-options

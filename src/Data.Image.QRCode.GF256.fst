@@ -319,6 +319,176 @@ let lemma_bit_shift (x k: nat) : Lemma
   ()
 #pop-options
 
+(* ========================================================================
+   SECTION 2a: bit decomposition — bits_xor recovers a (< 2^n)
+   ========================================================================
+   The symmetric double-sum form of the carry-less product needs the bit
+   decomposition [a = XOR_{i<n} bit_i(a) · 2^i].  The SUM decomposition
+   [a = SUM_{i<n} bit_i(a) · 2^i] is the standard div/mod identity; the
+   bridge sum↔XOR is DISJOINTNESS (the terms bit_i(a)·2^i occupy disjoint
+   bit windows, so XOR adds).  Two fiddly helpers (where a fatigued admit
+   was slipped in before) close it — each is proven 0-admit in isolation.
+   ======================================================================== *)
+
+/// The XOR-fold of the bit decomposition: XOR_{i<n} bit_i(a) · 2^i.
+let rec bits_xor (a: nat) (n: nat) : Tot nat (decreases n) =
+  if n = 0 then 0
+  else xor16 (bits_xor a (n - 1)) (bit a (n - 1) * pow2_pos (n - 1))
+
+/// The SUM-fold of the bit decomposition: SUM_{i<n} bit_i(a) · 2^i.
+let rec bits_sum (a: nat) (n: nat) : Tot nat (decreases n) =
+  if n = 0 then 0
+  else bits_sum a (n - 1) + bit a (n - 1) * pow2_pos (n - 1)
+
+/// bit k of x depends only on the low k+1 bits: bit x k = bit (x % 2^{k+1}) k.
+/// Derivation: x = q·2^{k+1} + r with r = x % 2^{k+1}; then x/2^k = 2q + r/2^k,
+/// so (x/2^k) % 2 = (r/2^k) % 2 (the 2q vanishes mod 2).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let lemma_bit_low (a k: nat) : Lemma
+  (bit a k = bit (a % pow2_pos (k + 1)) k)
+  =
+  let p = pow2_pos k in
+  let p1 = pow2_pos (k + 1) in
+  let r = a % p1 in
+  lemma_pow2_pos_succ k;
+  FStar.Math.Lemmas.lemma_div_mod a p1;
+  (* a = p1 * q + r with q = a/p1, p1 = 2p.  So a/p = 2q + r/p exactly. *)
+  assert (a / p = (p1 * (a / p1)) / p + r / p);
+  assert (p1 * (a / p1) / p = 2 * (a / p1));
+  assert (a / p = 2 * (a / p1) + r / p);
+  (* (2q + r/p) % 2 = (r/p) % 2 *)
+  assert ((2 * (a / p1) + r / p) % 2 = (r / p) % 2);
+  ()
+#pop-options
+
+/// Disjoint XOR equals addition: nat_xor x (b · 2^k) w = x + b · 2^k when
+/// x < 2^k, b ∈ {0,1}, and b · 2^k < 2^w (the two operands live in disjoint
+/// bit windows, so XOR adds).  Inducts on k, peeling the low bit of x (which
+/// is untouched, since b·2^k is even for k ≥ 1).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_xor_disjoint (x b k w: nat) : Lemma
+  (requires x < pow2_pos k /\ (b = 0 \/ b = 1) /\ b * pow2_pos k < pow2 w /\ k < w)
+  (ensures nat_xor x (b * pow2_pos k) w = x + b * pow2_pos k)
+  (decreases k)
+  =
+  if k = 0 then begin
+    (* x < 1 so x = 0; nat_xor 0 b w = b (b ∈ {0,1} < 2^w). *)
+    lemma_xor_zero (b * pow2_pos 0) w
+  end
+  else begin
+    lemma_pow2_pos_succ (k - 1);
+    (* b·2^k is even (k ≥ 1): its low bit is 0.  nat_xor's definition: *)
+    assert (nat_xor x (b * pow2_pos k) w
+            = (x % 2) + 2 * nat_xor (x / 2) (b * pow2_pos (k - 1)) (w - 1));
+    lemma_xor_disjoint (x / 2) b (k - 1) (w - 1);
+    FStar.Math.Lemmas.lemma_div_mod x 2;
+    ()
+  end
+#pop-options
+
+/// Width-16 instance: xor16 x (b·2^k) = x + b·2^k (the disjoint-window sum).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+let lemma_xor_disjoint_high (x b k: nat) : Lemma
+  (requires x < pow2_pos k /\ (b = 0 \/ b = 1) /\ b * pow2_pos k < pow2 16 /\ k < 16)
+  (ensures xor16 x (b * pow2_pos k) = x + b * pow2_pos k)
+  =
+  lemma_xor_disjoint x b k 16
+#pop-options
+
+/// 0 <= bit x k <= 1 (a bit is a boolean-valued nat).
+#push-options "--fuel 2 --ifuel 2"
+let lemma_bit_bounded (x k: nat) : Lemma (bit x k = 0 \/ bit x k = 1) = ()
+#pop-options
+
+/// The SUM-fold recovers the bit decomposition modulo 2^n:
+/// bits_sum a n = a % 2^n.  Inducts on n; the step uses the bit-extraction
+/// identity [a % 2^{n} = a % 2^{n-1} + bit a (n-1) · 2^{n-1}].
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_bits_sum_mod (a n: nat) : Lemma
+  (ensures bits_sum a n = a % pow2_pos n)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_bits_sum_mod a (n - 1);
+    lemma_pow2_pos_succ (n - 1);
+    let m = pow2_pos (n - 1) in
+    let r = a % m in
+    let q = a / m in
+    FStar.Math.Lemmas.lemma_div_mod a m;
+    (* a = m·q + r.  bit a (n-1) = q % 2.  Claim: a % (2m) = r + (q%2)·m. *)
+    FStar.Math.Lemmas.lemma_div_mod q 2;
+    (* q = 2·(q/2) + q%2, so q·m = 2m·(q/2) + m·(q%2). *)
+    FStar.Math.Lemmas.lemma_mod_plus (r + (q % 2) * m) (q / 2) (2 * m);
+    (* r + (q%2)m < 2m *)
+    FStar.Math.Lemmas.small_mod (r + (q % 2) * m) (2 * m);
+    ()
+  end
+#pop-options
+
+/// bits_sum recovers [a] when a < 2^n (a is already reduced).
+#push-options "--fuel 2 --ifuel 2"
+let lemma_bits_sum_recover (a n: nat) : Lemma
+  (requires a < pow2_pos n)
+  (ensures bits_sum a n = a)
+  =
+  lemma_bits_sum_mod a n;
+  FStar.Math.Lemmas.small_mod a (pow2_pos n)
+#pop-options
+
+/// bits_sum is bounded by 2^n (a % 2^n < 2^n).
+#push-options "--fuel 2 --ifuel 2"
+let lemma_bits_sum_bounded (a n: nat) : Lemma (bits_sum a n < pow2_pos n) =
+  lemma_bits_sum_mod a n;
+  FStar.Math.Lemmas.lemma_mod_lt a (pow2_pos n)
+#pop-options
+
+/// bits_xor's XOR of an already-summed prefix equals the sum (disjoint windows):
+/// nat_xor (SUM) (bit a k · 2^k) = SUM + bit a k · 2^k for k < 16 and
+/// the SUM < 2^k.  One-shot instance of lemma_xor_disjoint_high.
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
+let lemma_xor_disjoint_bit (sum a k: nat) : Lemma
+  (requires sum < pow2_pos k /\ k < 16)
+  (ensures xor16 sum (bit a k * pow2_pos k) = sum + bit a k * pow2_pos k)
+  =
+  lemma_bit_bounded a k;
+  lemma_pow2_pos_mono k 15;
+  assert_norm (pow2_pos 15 = 32768);
+  assert_norm (pow2 16 = 65536);
+  assert (pow2_pos k <= 32768);
+  assert (bit a k * pow2_pos k <= pow2_pos k);
+  assert (bit a k * pow2_pos k < pow2 16);
+  lemma_xor_disjoint_high sum (bit a k) k
+#pop-options
+
+/// The XOR-fold equals the SUM-fold of the bit decomposition (disjoint windows):
+/// bits_xor a n = bits_sum a n.  Inducts on n, XORing in bit (n-1) · 2^{n-1}
+/// onto a sum < 2^{n-1} (the inductive sum stays below 2^{n-1} < 2^{16}).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let rec lemma_bits_xor_eq_sum (a n: nat) : Lemma
+  (requires n <= 16)
+  (ensures bits_xor a n = bits_sum a n)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_bits_xor_eq_sum a (n - 1);
+    lemma_bits_sum_bounded a (n - 1);
+    lemma_xor_disjoint_bit (bits_sum a (n - 1)) a (n - 1);
+    ()
+  end
+#pop-options
+
+/// THE bit decomposition: bits_xor a n = a for a < 2^n (n <= 16).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 300"
+let lemma_bits_xor_recover (a n: nat) : Lemma
+  (requires a < pow2_pos n /\ n <= 16)
+  (ensures bits_xor a n = a)
+  =
+  lemma_bits_xor_eq_sum a n;
+  lemma_bits_sum_recover a n
+#pop-options
+
 /// Position-indexed carry-less product accumulator: for each position pos
 /// (from k-1 down to 0) with bit pos of [b] set, XOR [a · 2^pos] into [acc].
 let rec clmul_go (acc a b k: nat) : Tot nat (decreases k) =

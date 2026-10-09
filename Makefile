@@ -28,8 +28,8 @@ ULIB := $(FLIB)/ulib
 
 # Pulse ships in the install under $(locate_lib)/pulse (sources under
 # pulse/{common,pulse/lib}, `.checked` under pulse/{common.checked,
-# pulse.checked}).  Data.BaseN.Pulse (in Pulse) needs these, since FSTAR_FLAGS
-# uses --no_default_includes.
+# pulse.checked}).  The Data.Image.*.Pulse leaves (in Pulse) need these, since
+# FSTAR_FLAGS uses --no_default_includes.
 PULSE_DIRS := $(FLIB)/pulse/common\
   $(FLIB)/pulse/common.checked\
   $(FLIB)/pulse/pulse/lib\
@@ -45,15 +45,21 @@ FSTAR_FLAGS = --no_default_includes \
 
 # Source modules in DEPENDENCY ORDER (leaf modules first).
 #
-SRC_MODS := Data.BaseN.Base08 Data.BaseN.Base16 Data.BaseN.Base32 \
-            Data.BaseN.Base64 Data.BaseN Data.BaseN.Pulse
+SRC_MODS := \
+  Data.Image.QRCode.Types Data.Image.QRCode.LUT Data.Image.QRCode.GF256 \
+  Data.Image.QRCode.ReedSolomon Data.Image.QRCode.DataEncoding \
+  Data.Image.QRCode.Matrix Data.Image.QRCode.Encode Data.Image.QRCode.Render \
+  Data.Image Data.Image.Convert \
+  Data.Image.PNG.CRC Data.Image.PNG.Deflate Data.Image.PNG.Zlib \
+  Data.Image.PNG.Filter Data.Image.PNG.Encode \
+  Data.Image.Pulse Data.Image.PNG.Pulse Data.Image.QRCode.Pulse
 
 # Pulse-only modules skip re-verification (they ship pre-verified in the F*
-# install); Data.BaseN.Pulse opens Pulse.Lib.* which would otherwise time out
-# re-verifying the whole Pulse stdlib on every `make check`.
+# install); the Data.Image.*.Pulse leaves open Pulse.Lib.* which would
+# otherwise time out re-verifying the whole Pulse stdlib on every `make check`.
 ALREADY_CACHED := Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore
 
-TST_MODS := Data.BaseN.Test.Integration
+TST_MODS := Data.Image.Test.Integration
 
 .PHONY: check clean
 

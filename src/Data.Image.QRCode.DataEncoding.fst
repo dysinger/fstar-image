@@ -482,6 +482,31 @@ let rec lemma_capacity_monotonic (v1 v2: version) (e: ecl) : Lemma
     lemma_tdc_adjacent (v2 - 1) e
   end
 
+/// ISO 18004 Table 7 boundary-cell known-answers — independent spec constants
+/// (the version 1, 2, and 40 rows across all four EC levels), checked against
+/// the published EC-capacity table rather than recomputed from
+/// [total_data_codewords] itself.
+let lemma_tdc_cells () : Lemma
+  (ensures
+      total_data_codewords 1 L = 19   /\ total_data_codewords 1 M = 16
+   /\ total_data_codewords 1 Q = 13   /\ total_data_codewords 1 H = 9
+   /\ total_data_codewords 2 L = 34   /\ total_data_codewords 2 M = 28
+   /\ total_data_codewords 2 Q = 22   /\ total_data_codewords 2 H = 16
+   /\ total_data_codewords 40 L = 2956 /\ total_data_codewords 40 M = 2334
+   /\ total_data_codewords 40 Q = 1666 /\ total_data_codewords 40 H = 1276)
+  = assert_norm (total_data_codewords 1 L = 19);
+    assert_norm (total_data_codewords 1 M = 16);
+    assert_norm (total_data_codewords 1 Q = 13);
+    assert_norm (total_data_codewords 1 H = 9);
+    assert_norm (total_data_codewords 2 L = 34);
+    assert_norm (total_data_codewords 2 M = 28);
+    assert_norm (total_data_codewords 2 Q = 22);
+    assert_norm (total_data_codewords 2 H = 16);
+    assert_norm (total_data_codewords 40 L = 2956);
+    assert_norm (total_data_codewords 40 M = 2334);
+    assert_norm (total_data_codewords 40 Q = 1666);
+    assert_norm (total_data_codewords 40 H = 1276)
+
 /// encode_bytes, when it succeeds, yields exactly `capacity` codewords.
 let lemma_encode_bytes_length (data: list byte) (v: version) (e: ecl) : Lemma
   (ensures (

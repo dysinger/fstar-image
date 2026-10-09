@@ -97,6 +97,23 @@ let rec lemma_adler32_loop_bound (s1 s2: nat) (data: list byte) : Lemma
 let lemma_adler32_bound (data: list byte) : Lemma (adler32 data < 4294967296)
   = lemma_adler32_loop_bound 1 0 data
 
+/// Adler-32 known-answer: the RFC-1950 / zlib canonical check value for the
+/// ASCII bytes of "123456789" is 0x091E01DE (= 152961502).  This is an
+/// INDEPENDENT spec constant (not a recomputation of [adler32] itself).
+let lemma_adler32_check_value () : Lemma
+  (ensures adler32
+      [0x31uy; 0x32uy; 0x33uy; 0x34uy; 0x35uy; 0x36uy; 0x37uy; 0x38uy; 0x39uy]
+      == 152961502)
+  = assert_norm (adler32
+      [0x31uy; 0x32uy; 0x33uy; 0x34uy; 0x35uy; 0x36uy; 0x37uy; 0x38uy; 0x39uy]
+      == 152961502)
+
+/// FCHECK divisibility: the zlib header (CMF=0x78=120, FLG=0x9C=156) satisfies
+/// (CMF*256 + FLG) % 31 == 0, as required by RFC-1950 §2.2 (the 16-bit value
+/// must be a multiple of 31).  (120*256 + 156) = 30876 = 31 * 996.
+let lemma_zlib_fcheck () : Lemma ((120 * 256 + 156) % 31 == 0)
+  = assert_norm ((120 * 256 + 156) % 31 == 0)
+
 /// [nat_to_bytes_be4] / [parse_u32_be] are inverse for n < 2^32.
 let lemma_u32_be_roundtrip (n: nat {n < 4294967296}) : Lemma
   (parse_u32_be (nat_to_bytes_be4 n) == Some (n, []))

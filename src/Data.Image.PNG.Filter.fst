@@ -348,6 +348,30 @@ let lemma_paeth_predictor_selects (a b c: byte)
   let r = paeth_predictor a b c in
   assert (r == a \/ r == b \/ r == c)
 
+/// The Paeth predictor selects the input NEAREST to the estimate p = a+b-c
+/// (ISO 15948 §9, "nearest to a + b - c").  Strengthens the weak selection
+/// lemma into the full disjunction: the predictor returns a exactly when a is
+/// closest (pa <= pb and pa <= pc), b when b is closest, else c.
+let lemma_paeth_predictor_nearest (a b c: byte)
+  : Lemma (let va = v a in
+           let vb = v b in
+           let vc = v c in
+           let p = va + vb - vc in
+           let pa = abs (p - va) in
+           let pb = abs (p - vb) in
+           let pc = abs (p - vc) in
+           (pa <= pb /\ pa <= pc ==> paeth_predictor a b c == a)
+        /\ (pb <  pa /\ pb <= pc ==> paeth_predictor a b c == b)
+        /\ (pc <  pa /\ pc <  pb  ==> paeth_predictor a b c == c)) =
+  let va = v a in
+  let vb = v b in
+  let vc = v c in
+  let p = va + vb - vc in
+  let pa = abs (p - va) in
+  let pb = abs (p - vb) in
+  let pc = abs (p - vc) in
+  ()
+
 (* ========================================================================
    SECTION 8: RFC known-answer vectors (ISO/IEC 15948:2004 §9)
    ======================================================================== *)
@@ -370,3 +394,31 @@ let lemma_filter_up_sample_row () : Lemma
            == [0x02uy; 0x0Auy; 0x0Buy; 0x0Cuy])
   = assert_norm (filter_scanline FilterUp [0x0Auy; 0x0Buy; 0x0Cuy] [0x00uy; 0x00uy; 0x00uy] 1
                   == [0x02uy; 0x0Auy; 0x0Buy; 0x0Cuy])
+
+/// Known-answer: a concrete ISO 15948 §9.2-style Average-filter example,
+/// bpp = 3, raw row [10;20;30;40;50;60] over previous row
+/// [1;2;3;4;5;6].  The Average predictor is floor((a+b)/2); each filtered byte
+/// is raw - avg(left, up).  Values are independent (computed by hand from the
+/// spec formula, not from [filter_scanline] itself).
+let lemma_filter_average_sample_row () : Lemma
+  (ensures filter_scanline FilterAverage
+             [0x0Auy; 0x14uy; 0x1Euy; 0x28uy; 0x32uy; 0x3Cuy]
+             [0x01uy; 0x02uy; 0x03uy; 0x04uy; 0x05uy; 0x06uy] 3
+           == [0x03uy; 0x0Auy; 0x13uy; 0x1Duy; 0x21uy; 0x26uy; 0x2Auy])
+  = assert_norm (filter_scanline FilterAverage
+             [0x0Auy; 0x14uy; 0x1Euy; 0x28uy; 0x32uy; 0x3Cuy]
+             [0x01uy; 0x02uy; 0x03uy; 0x04uy; 0x05uy; 0x06uy] 3
+             == [0x03uy; 0x0Auy; 0x13uy; 0x1Duy; 0x21uy; 0x26uy; 0x2Auy])
+
+/// Known-answer: a concrete ISO 15948 §9.2-style Paeth-filter example over the
+/// same bpp = 3 rows.  The Paeth predictor returns the nearest of left/up/
+/// upper-left to the estimate a+b-c; each filtered byte is raw - predictor.
+let lemma_filter_paeth_sample_row () : Lemma
+  (ensures filter_scanline FilterPaeth
+             [0x0Auy; 0x14uy; 0x1Euy; 0x28uy; 0x32uy; 0x3Cuy]
+             [0x01uy; 0x02uy; 0x03uy; 0x04uy; 0x05uy; 0x06uy] 3
+           == [0x04uy; 0x09uy; 0x12uy; 0x1Buy; 0x1Euy; 0x1Euy; 0x1Euy])
+  = assert_norm (filter_scanline FilterPaeth
+             [0x0Auy; 0x14uy; 0x1Euy; 0x28uy; 0x32uy; 0x3Cuy]
+             [0x01uy; 0x02uy; 0x03uy; 0x04uy; 0x05uy; 0x06uy] 3
+             == [0x04uy; 0x09uy; 0x12uy; 0x1Buy; 0x1Euy; 0x1Euy; 0x1Euy])

@@ -443,6 +443,26 @@ let lemma_mask3 (row col: nat) : Lemma
   (ensures mask_condition 3 row col = ((row + col) % 3 = 0))
   = ()
 
+/// Mask pattern 4: ((row/2) + (col/3)) % 2 = 0 (ISO 18004 §8.8 Table 10).
+let lemma_mask4 (row col: nat) : Lemma
+  (ensures mask_condition 4 row col = (((row / 2) + (col / 3)) % 2 = 0))
+  = ()
+
+/// Mask pattern 5: (row*col) % 2 + (row*col) % 3 = 0 (ISO 18004 §8.8 Table 10).
+let lemma_mask5 (row col: nat) : Lemma
+  (ensures mask_condition 5 row col = (((row * col) % 2) + ((row * col) % 3) = 0))
+  = ()
+
+/// Mask pattern 6: ((row*col)%2 + (row*col)%3) % 2 = 0 (ISO 18004 §8.8 Table 10).
+let lemma_mask6 (row col: nat) : Lemma
+  (ensures mask_condition 6 row col = ((((row * col) % 2) + ((row * col) % 3)) % 2 = 0))
+  = ()
+
+/// Mask pattern 7: ((row+col)%2 + (row*col)%3) % 2 = 0 (ISO 18004 §8.8 Table 10).
+let lemma_mask7 (row col: nat) : Lemma
+  (ensures mask_condition 7 row col = ((((row + col) % 2) + ((row * col) % 3)) % 2 = 0))
+  = ()
+
 /// select_best_mask always returns a mask index in 0..7.
 let lemma_select_best_mask_bounds (m: qr_matrix) : Lemma
   (ensures select_best_mask m >= 0 /\ select_best_mask m <= 7)

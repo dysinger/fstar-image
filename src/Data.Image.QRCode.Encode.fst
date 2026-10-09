@@ -196,7 +196,7 @@ let encode_qr_uri (uri: string) (req_v: version) (e: ecl) : option qr_matrix =
       match place_data matrix data_bytes ec_bytes with
       | None -> None
       | Some m ->
-        let best_mask = 0 in  (* forced mask 0 for segno comparison *)
+        let best_mask = select_best_mask m in  (* ISO 18004 §8.8 penalty-minimizing mask *)
         let masked = apply_mask m best_mask in
         let with_format = place_format_info masked e best_mask in
         Some with_format
@@ -240,5 +240,25 @@ let lemma_format_info_m0 () : Lemma (ensures format_info M 0 = 0x5412)
 /// Format info known-answer: ECL M + mask 3 encodes to 0x574B.
 let lemma_format_info_m3 () : Lemma (ensures format_info M 3 = 0x574B)
   = assert_norm (format_info M 3 = 0x574B)
+
+/// Format info known-answer: ECL L + mask 0 encodes to 0x57C4 — a NONZERO-ECL
+/// vector, so BCH(15,5) actually computes a nonzero codeword end-to-end
+/// (data = 1*8 + 0 = 8, BCH(15,5) of 8 is nonzero, not the trivial ECL=M case
+/// whose 2-bit indicator is 0).
+let lemma_format_info_l0 () : Lemma (ensures format_info L 0 = 0x57C4)
+  = assert_norm (format_info L 0 = 0x57C4)
+
+/// Format info known-answer: ECL Q + mask 0 encodes to 0x555F (nonzero ECL).
+let lemma_format_info_q0 () : Lemma (ensures format_info Q 0 = 0x555F)
+  = assert_norm (format_info Q 0 = 0x555F)
+
+/// Format info known-answer: ECL H + mask 0 encodes to 0x5689 (nonzero ECL).
+let lemma_format_info_h0 () : Lemma (ensures format_info H 0 = 0x5689)
+  = assert_norm (format_info H 0 = 0x5689)
+
+/// Format info known-answer: ECL L + mask 7 encodes to 0x5576 (nonzero ECL,
+/// nonzero mask): data = 1*8 + 7 = 15, BCH(15,5) of 15 is nonzero.
+let lemma_format_info_l7 () : Lemma (ensures format_info L 7 = 0x5576)
+  = assert_norm (format_info L 7 = 0x5576)
 
 #pop-options

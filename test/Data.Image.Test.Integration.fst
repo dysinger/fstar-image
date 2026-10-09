@@ -193,6 +193,12 @@ let _lemma_crc32_empty = lemma_crc32_empty
 let _lemma_crc32_check_value = lemma_crc32_check_value
 (** [lemma_crc32_iend] *)
 let _lemma_crc32_iend = lemma_crc32_iend
+(** [lemma_crc32_table_length] *)
+let _lemma_crc32_table_length = lemma_crc32_table_length
+(** [lemma_crc32_ref_check_value] *)
+let _lemma_crc32_ref_check_value = lemma_crc32_ref_check_value
+(** [lemma_crc32_models_agree_check] *)
+let _lemma_crc32_models_agree_check = lemma_crc32_models_agree_check
 
 
 (* ========================================================================
@@ -280,6 +286,12 @@ let _lemma_paeth_predictor_selects = lemma_paeth_predictor_selects
 let _lemma_filter_sub_sample_row = lemma_filter_sub_sample_row
 (** [lemma_filter_up_sample_row] *)
 let _lemma_filter_up_sample_row = lemma_filter_up_sample_row
+(** [lemma_paeth_predictor_nearest] *)
+let _lemma_paeth_predictor_nearest = lemma_paeth_predictor_nearest
+(** [lemma_filter_average_sample_row] *)
+let _lemma_filter_average_sample_row = lemma_filter_average_sample_row
+(** [lemma_filter_paeth_sample_row] *)
+let _lemma_filter_paeth_sample_row = lemma_filter_paeth_sample_row
 
 
 (* ========================================================================
@@ -358,6 +370,10 @@ let _lemma_u32_be_roundtrip = lemma_u32_be_roundtrip
 let _lemma_u32_be_roundtrip_suffix = lemma_u32_be_roundtrip_suffix
 (** [lemma_zlib_roundtrip] *)
 let _lemma_zlib_roundtrip = lemma_zlib_roundtrip
+(** [lemma_adler32_check_value] *)
+let _lemma_adler32_check_value = lemma_adler32_check_value
+(** [lemma_zlib_fcheck] *)
+let _lemma_zlib_fcheck = lemma_zlib_fcheck
 
 
 (* ========================================================================
@@ -851,6 +867,8 @@ let _lemma_byte_of_8bits_roundtrip = lemma_byte_of_8bits_roundtrip
 let _lemma_tdc_adjacent = lemma_tdc_adjacent
 (** [lemma_capacity_monotonic] *)
 let _lemma_capacity_monotonic = lemma_capacity_monotonic
+(** [lemma_tdc_cells] *)
+let _lemma_tdc_cells = lemma_tdc_cells
 (** [lemma_encode_bytes_length] *)
 let _lemma_encode_bytes_length = lemma_encode_bytes_length
 (** [lemma_encode_uri_length] *)
@@ -888,6 +906,12 @@ let _is_function_module_lut = is_function_module_lut
 let _is_free_lut = is_free_lut
 (** [data_positions] *)
 let _data_positions = data_positions
+(** [lemma_function_table_square] *)
+let _lemma_function_table_square = lemma_function_table_square
+(** [lemma_data_position_count] *)
+let _lemma_data_position_count = lemma_data_position_count
+(** [lemma_function_free_partition] *)
+let _lemma_function_free_partition = lemma_function_free_partition
 
 
 (* ========================================================================
@@ -959,6 +983,14 @@ let _lemma_mask1 = lemma_mask1
 let _lemma_mask2 = lemma_mask2
 (** [lemma_mask3] *)
 let _lemma_mask3 = lemma_mask3
+(** [lemma_mask4] *)
+let _lemma_mask4 = lemma_mask4
+(** [lemma_mask5] *)
+let _lemma_mask5 = lemma_mask5
+(** [lemma_mask6] *)
+let _lemma_mask6 = lemma_mask6
+(** [lemma_mask7] *)
+let _lemma_mask7 = lemma_mask7
 (** [lemma_select_best_mask_bounds] *)
 let _lemma_select_best_mask_bounds = lemma_select_best_mask_bounds
 
@@ -1004,6 +1036,14 @@ let _lemma_bch_d5 = lemma_bch_d5
 let _lemma_format_info_m0 = lemma_format_info_m0
 (** [lemma_format_info_m3] *)
 let _lemma_format_info_m3 = lemma_format_info_m3
+(** [lemma_format_info_l0] *)
+let _lemma_format_info_l0 = lemma_format_info_l0
+(** [lemma_format_info_q0] *)
+let _lemma_format_info_q0 = lemma_format_info_q0
+(** [lemma_format_info_h0] *)
+let _lemma_format_info_h0 = lemma_format_info_h0
+(** [lemma_format_info_l7] *)
+let _lemma_format_info_l7 = lemma_format_info_l7
 
 
 (* ========================================================================

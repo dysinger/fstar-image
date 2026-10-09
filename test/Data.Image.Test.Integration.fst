@@ -569,6 +569,174 @@ let _lemma_gf_mul_known_answer = lemma_gf_mul_known_answer
 let _lemma_gf_mul_alpha_pow = lemma_gf_mul_alpha_pow
 
 
+(** Structural tower lemmas (Phase 6b) — xor/pow2/cancel/trunc/disjoint/
+    bits_xor/reduce/clmul/grid/subst *)
+
+
+(** [lemma_nat_xor_double] *)
+let _lemma_nat_xor_double = lemma_nat_xor_double
+(** [lemma_xor_bit_even_base] *)
+let _lemma_xor_bit_even_base = lemma_xor_bit_even_base
+(** [lemma_xor_bit_even] *)
+let _lemma_xor_bit_even = lemma_xor_bit_even
+(** [lemma_xor_00] *)
+let _lemma_xor_00 = lemma_xor_00
+(** [lemma_xor_pad] *)
+let _lemma_xor_pad = lemma_xor_pad
+(** [lemma_cancel_pow2] *)
+let _lemma_cancel_pow2 = lemma_cancel_pow2
+(** [lemma_xor_trunc_cancel] *)
+let _lemma_xor_trunc_cancel = lemma_xor_trunc_cancel
+(** [lemma_pow2_mono] *)
+let _lemma_pow2_mono = lemma_pow2_mono
+(** [lemma_xor_shift_out] *)
+let _lemma_xor_shift_out = lemma_xor_shift_out
+(** [lemma_xor_trunc_both] *)
+let _lemma_xor_trunc_both = lemma_xor_trunc_both
+(** [lemma_pow2_pos_succ] *)
+let _lemma_pow2_pos_succ = lemma_pow2_pos_succ
+(** [lemma_pow2_pos_mono] *)
+let _lemma_pow2_pos_mono = lemma_pow2_pos_mono
+(** [lemma_pow2_pos_add] *)
+let _lemma_pow2_pos_add = lemma_pow2_pos_add
+(** [lemma_bit_shift] *)
+let _lemma_bit_shift = lemma_bit_shift
+(** [lemma_bit_low] *)
+let _lemma_bit_low = lemma_bit_low
+(** [lemma_xor_disjoint] *)
+let _lemma_xor_disjoint = lemma_xor_disjoint
+(** [lemma_xor_disjoint_high] *)
+let _lemma_xor_disjoint_high = lemma_xor_disjoint_high
+(** [lemma_bit_bounded] *)
+let _lemma_bit_bounded = lemma_bit_bounded
+(** [lemma_bits_sum_mod] *)
+let _lemma_bits_sum_mod = lemma_bits_sum_mod
+(** [lemma_bits_sum_recover] *)
+let _lemma_bits_sum_recover = lemma_bits_sum_recover
+(** [lemma_bits_sum_bounded] *)
+let _lemma_bits_sum_bounded = lemma_bits_sum_bounded
+(** [lemma_xor_disjoint_bit] *)
+let _lemma_xor_disjoint_bit = lemma_xor_disjoint_bit
+(** [lemma_bits_xor_eq_sum] *)
+let _lemma_bits_xor_eq_sum = lemma_bits_xor_eq_sum
+(** [lemma_bits_xor_recover] *)
+let _lemma_bits_xor_recover = lemma_bits_xor_recover
+(** [lemma_reduce_from_drop_high] *)
+let _lemma_reduce_from_drop_high = lemma_reduce_from_drop_high
+(** [lemma_reduce_double] *)
+let _lemma_reduce_double = lemma_reduce_double
+(** [lemma_raw_mul_doubles_bound] *)
+let _lemma_raw_mul_doubles_bound = lemma_raw_mul_doubles_bound
+(** [lemma_raw_mul_go_linear] *)
+let _lemma_raw_mul_go_linear = lemma_raw_mul_go_linear
+(** [lemma_xor_16_eq_8] *)
+let _lemma_xor_16_eq_8 = lemma_xor_16_eq_8
+(** [lemma_reduce_id] *)
+let _lemma_reduce_id = lemma_reduce_id
+(** [lemma_nat_xor_bit] *)
+let _lemma_nat_xor_bit = lemma_nat_xor_bit
+(** [lemma_select_xor_bool] *)
+let _lemma_select_xor_bool = lemma_select_xor_bool
+(** [lemma_reduce_step_xor] *)
+let _lemma_reduce_step_xor = lemma_reduce_step_xor
+(** [lemma_step_xor] *)
+let _lemma_step_xor = lemma_step_xor
+(** [lemma_reduce_from_base] *)
+let _lemma_reduce_from_base = lemma_reduce_from_base
+(** [lemma_xor16_middle] *)
+let _lemma_xor16_middle = lemma_xor16_middle
+(** [lemma_xor16_double_gen] *)
+let _lemma_xor16_double_gen = lemma_xor16_double_gen
+(** [lemma_raw_mul_go_bilinear] *)
+let _lemma_raw_mul_go_bilinear = lemma_raw_mul_go_bilinear
+(** [lemma_grid_t_zero] *)
+let _lemma_grid_t_zero = lemma_grid_t_zero
+(** [lemma_row_append] *)
+let _lemma_row_append = lemma_row_append
+(** [lemma_grid_swap] *)
+let _lemma_grid_swap = lemma_grid_swap
+(** [lemma_nat_xor_shl] *)
+let _lemma_nat_xor_shl = lemma_nat_xor_shl
+(** [lemma_xor16_shl] *)
+let _lemma_xor16_shl = lemma_xor16_shl
+(** [lemma_bits_xor_bounded] *)
+let _lemma_bits_xor_bounded = lemma_bits_xor_bounded
+(** [lemma_shl_bits_eq_mul] *)
+let _lemma_shl_bits_eq_mul = lemma_shl_bits_eq_mul
+(** [lemma_mul_eq_shl_bits] *)
+let _lemma_mul_eq_shl_bits = lemma_mul_eq_shl_bits
+(** [lemma_fold_xor_scale] *)
+let _lemma_fold_xor_scale = lemma_fold_xor_scale
+(** [lemma_fold_col_eq_fold_xor] *)
+let _lemma_fold_col_eq_fold_xor = lemma_fold_col_eq_fold_xor
+(** [lemma_fold_xor_eq_shl_bits] *)
+let _lemma_fold_xor_eq_shl_bits = lemma_fold_xor_eq_shl_bits
+(** [lemma_xor_scale2] *)
+let _lemma_xor_scale2 = lemma_xor_scale2
+(** [lemma_fold_col_clmul] *)
+let _lemma_fold_col_clmul = lemma_fold_col_clmul
+(** [lemma_col_g] *)
+let _lemma_col_g = lemma_col_g
+(** [lemma_pow2_eq_pow2_pos] *)
+let _lemma_pow2_eq_pow2_pos = lemma_pow2_eq_pow2_pos
+(** [lemma_xor_zero16] *)
+let _lemma_xor_zero16 = lemma_xor_zero16
+(** [lemma_grid_t_clmul_bounded] *)
+let _lemma_grid_t_clmul_bounded = lemma_grid_t_clmul_bounded
+(** [lemma_clmul_go_grid_t] *)
+let _lemma_clmul_go_grid_t = lemma_clmul_go_grid_t
+(** [lemma_clmul_dsum] *)
+let _lemma_clmul_dsum = lemma_clmul_dsum
+(** [lemma_col_transpose] *)
+let _lemma_col_transpose = lemma_col_transpose
+(** [lemma_grid_t_transpose] *)
+let _lemma_grid_t_transpose = lemma_grid_t_transpose
+(** [lemma_grid_transpose] *)
+let _lemma_grid_transpose = lemma_grid_transpose
+(** [lemma_clmul_grid_swap] *)
+let _lemma_clmul_grid_swap = lemma_clmul_grid_swap
+(** [lemma_fold_row_ext] *)
+let _lemma_fold_row_ext = lemma_fold_row_ext
+(** [lemma_grid_ext] *)
+let _lemma_grid_ext = lemma_grid_ext
+(** [lemma_dsum_sym] *)
+let _lemma_dsum_sym = lemma_dsum_sym
+(** [lemma_clmul_sym] *)
+let _lemma_clmul_sym = lemma_clmul_sym
+(** [lemma_bit_xor_scale] *)
+let _lemma_bit_xor_scale = lemma_bit_xor_scale
+(** [lemma_subst_hi_xor] *)
+let _lemma_subst_hi_xor = lemma_subst_hi_xor
+(** [lemma_bits_xor_xor] *)
+let _lemma_bits_xor_xor = lemma_bits_xor_xor
+(** [lemma_subst_xor] *)
+let _lemma_subst_xor = lemma_subst_xor
+(** [lemma_bit_zero] *)
+let _lemma_bit_zero = lemma_bit_zero
+(** [lemma_subst_hi_zero] *)
+let _lemma_subst_hi_zero = lemma_subst_hi_zero
+(** [lemma_subst_id] *)
+let _lemma_subst_id = lemma_subst_id
+(** [lemma_subst_hi_bound_tight] *)
+let _lemma_subst_hi_bound_tight = lemma_subst_hi_bound_tight
+(** [lemma_subst_hi_bound] *)
+let _lemma_subst_hi_bound = lemma_subst_hi_bound
+(** [lemma_subst_bound] *)
+let _lemma_subst_bound = lemma_subst_bound
+(** [lemma_subst_lt256] *)
+let _lemma_subst_lt256 = lemma_subst_lt256
+(** [lemma_reduce_sub_bounded] *)
+let _lemma_reduce_sub_bounded = lemma_reduce_sub_bounded
+(** [lemma_reduce_sub_id] *)
+let _lemma_reduce_sub_id = lemma_reduce_sub_id
+(** [lemma_subst_hi_double] *)
+let _lemma_subst_hi_double = lemma_subst_hi_double
+(** [lemma_reduce_sub_double] *)
+let _lemma_reduce_sub_double = lemma_reduce_sub_double
+(** [lemma_reduce_sub_xor] *)
+let _lemma_reduce_sub_xor = lemma_reduce_sub_xor
+
+
 (* ========================================================================
    Data.Image.QRCode.ReedSolomon — generator polynomial + ECC
    ======================================================================== *)
@@ -689,6 +857,20 @@ let _lemma_encode_bytes_length = lemma_encode_bytes_length
 let _lemma_encode_uri_length = lemma_encode_uri_length
 (** [lemma_string_to_latin1_bytes_length] *)
 let _lemma_string_to_latin1_bytes_length = lemma_string_to_latin1_bytes_length
+(** [lemma_b1_length] *)
+let _lemma_b1_length = lemma_b1_length
+(** [lemma_b2_length] *)
+let _lemma_b2_length = lemma_b2_length
+(** [lemma_b3_length] *)
+let _lemma_b3_length = lemma_b3_length
+(** [lemma_b4_length] *)
+let _lemma_b4_length = lemma_b4_length
+(** [lemma_b5_length] *)
+let _lemma_b5_length = lemma_b5_length
+(** [lemma_b6_length] *)
+let _lemma_b6_length = lemma_b6_length
+(** [lemma_b7_length] *)
+let _lemma_b7_length = lemma_b7_length
 
 
 (* ========================================================================

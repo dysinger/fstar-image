@@ -1,6 +1,7 @@
 (*
    Data.Image — Universal Image Type
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Core types: pixel_format, color_space, image record.
    Validation and smart constructors.

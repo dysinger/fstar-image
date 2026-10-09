@@ -1,7 +1,7 @@
 # Copyright 2026 Department of Code LLC.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# basen — Data.BaseN verified base-N codec library.
+# image — Data.Image verified PNG/QR-code image codec library.
 #
 # Takes the F* toolchain as concrete derivations (no `pkgs` blob, no overlay
 # assumption, no module-name/order arguments).  Module names and their
@@ -15,11 +15,13 @@
 # Artifacts (named by deliverable, not by backend):
 #   - `checked` — F* verification of src/ + test/ (the 0-admit gate).
 #   - `ocaml`   — findlib package shipping ALL OCaml-extractable modules:
-#                 the pure spec (Base08/16/32/64 + facade) AND the Pulse leaf
-#                 (Data.BaseN.Pulse, `--custard_backend OCaml`) as one dune lib.
-#   - `native`  — C11 shared/static lib of the Pulse leaf (Data.BaseN.Pulse,
-#                 `--custard_backend C`).
-#   - `fsharp`  — .NET library of the Pulse leaf (`--custard_backend FSharp`).
+#                 the pure spec (the 15 non-Pulse modules) AND the three Pulse
+#                 leaves (Data.Image.{,PNG.,QRCode.}Pulse,
+#                 `--custard_backend OCaml`) as one dune library.
+#   - `native`  — C11 shared/static lib of the three Pulse leaves
+#                 (`--custard_backend C`).
+#   - `fsharp`  — .NET library of the three Pulse leaves
+#                 (`--custard_backend FSharp`).
 #
 # Returns { checked; ocaml; native; fsharp; }.
 
@@ -37,17 +39,37 @@
 let
   inherit (stdenv) mkDerivation;
 
-  # Package name.  The package is "basen" (git repo "fstar-basen"), but the internal
-  # derivation/artifact names drop the "fstar-" prefix.
-  pname = "basen";
+  # Package name.  The package is "image" (git repo "fstar-image"), but the
+  # internal derivation/artifact names drop the "fstar-" prefix.
+  pname = "image";
 
   pure-modules = [
-    "Data.BaseN.Base08"
-    "Data.BaseN.Base16"
-    "Data.BaseN.Base32"
-    "Data.BaseN.Base64"
-    "Data.BaseN"
+    "Data.Image.QRCode.Types"
+    "Data.Image.QRCode.LUT"
+    "Data.Image.QRCode.GF256"
+    "Data.Image.QRCode.ReedSolomon"
+    "Data.Image"
+    "Data.Image.QRCode.DataEncoding"
+    "Data.Image.QRCode.Matrix"
+    "Data.Image.QRCode.Encode"
+    "Data.Image.QRCode.Render"
+    "Data.Image.Convert"
+    "Data.Image.PNG.CRC"
+    "Data.Image.PNG.Deflate"
+    "Data.Image.PNG.Zlib"
+    "Data.Image.PNG.Filter"
+    "Data.Image.PNG.Encode"
   ];
+
+  # The three Pulse leaves (verified + extracted via Custard, all backends).
+  pulse-modules = [
+    "Data.Image.Pulse"
+    "Data.Image.PNG.Pulse"
+    "Data.Image.QRCode.Pulse"
+  ];
+
+  # All 18 source modules in dependency order (pure, then leaves).
+  all-modules = pure-modules ++ pulse-modules;
 
   fstar-exe = "${fstar}/bin/fstar.exe";
   flib = "${fstar}/lib/fstar";
@@ -62,6 +84,9 @@ let
     "${flib}/pulse/pulse/lib"
     "${flib}/pulse/pulse.checked"
   ];
+
+  # The six Custard leaf entry functions (encode/decode of each of the three
+  # Pulse leaves) are spelled out explicitly in each backend below.
 
   meta = {
     license = lib.licenses.agpl3Plus;
@@ -101,17 +126,18 @@ let
 
   # ── OCaml source backend ────────────────────────────────────────────
   #
-  # `fstar.exe --codegen OCaml` extracts the pure spec modules; the Pulse leaf
-  # is extracted via `--codegen Custard --custard_backend OCaml` and merged into
-  # one dune library.  One file per invocation, in dependency order; the codec
-  # dependency's `.checked` cache is seeded so cross-module inlining resolves.
+  # `fstar.exe --codegen OCaml` extracts the pure spec modules; the Pulse
+  # leaves are extracted via `--codegen Custard --custard_backend OCaml` and
+  # merged into one dune library.  One file per invocation, in dependency
+  # order; the codec dependency's `.checked` cache is seeded so cross-module
+  # inlining resolves.
 
   # ocaml-modules: every module compiled into the dune library.  This is the
-  # basen pure-modules PLUS the codec pure spec (`Data.Codec.Types`,
+  # image pure-modules PLUS the codec pure spec (`Data.Codec.Types`,
   # `Data.Codec`) — extracted locally (NOT consumed from `codec-ocaml`) so the
   # raw top-level `Data_Codec_Types`/`Data_Codec` names resolve unwrapped
   # (codec-ocaml wraps its modules into a `Codec.*` namespace, breaking the
-  # bare references the basen `.ml` emit).  No `Custard` collision: we only
+  # bare references the image `.ml` emit).  No `Custard` collision: we only
   # extract the codec PURE spec, never its Pulse leaf.
   ocaml-lib-name = builtins.replaceStrings [ "-" ] [ "_" ] pname;
   ocaml-modules = (map (m: builtins.replaceStrings [ "." ] [ "_" ] m) pure-modules) ++ [
@@ -133,7 +159,7 @@ let
             cp ${codec-checked}/*.checked cache/ 2>/dev/null || true
             # 0) Extract the codec pure spec (Data.Codec.Types + Data.Codec) locally
             #    so the top-level `Data_Codec_Types`/`Data_Codec` module names the
-            #    basen `.ml` emit resolve unwrapped (codec-ocaml wraps them).
+            #    image `.ml` emit resolve unwrapped (codec-ocaml wraps them).
             for m in Data.Codec.Types Data.Codec; do
               ${fstar-exe} \
                 --no_default_includes --include "$ULIB" --include ${codec-src}/src \
@@ -150,6 +176,7 @@ let
             for m in ${builtins.concatStringsSep " " pure-modules}; do
               ${fstar-exe} \
                 --no_default_includes --include "$ULIB" --include ${codec-src}/src --include ./src \
+                --z3rlimit 120 \
                 --cache_checked_modules --cache_dir cache --odir cache \
                 src/$m.fst || exit 1
               ${fstar-exe} \
@@ -158,31 +185,33 @@ let
                 --codegen OCaml --odir $out \
                 src/$m.fst || exit 1
             done
-            # 2) Extract the Pulse leaf (Data.BaseN.Pulse), OCaml backend.
+            # 2) Extract the three Pulse leaves, OCaml backend.
             PULSE_INCS=""
             for d in ${lib.concatStringsSep " " pulse-incs}; do
               PULSE_INCS="$PULSE_INCS --include $d"
             done
-            ${fstar-exe} \
-              --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src \
-              --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
-              --z3rlimit 120 \
-              --cache_checked_modules --cache_dir cache --odir cache \
-              src/Data.BaseN.Pulse.fst || exit 1
+            for m in Data.Image.Pulse Data.Image.PNG.Pulse Data.Image.QRCode.Pulse; do
+              ${fstar-exe} \
+                --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src \
+                --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
+                --z3rlimit 120 \
+                --cache_checked_modules --cache_dir cache --odir cache \
+                src/$m.fst || exit 1
+            done
             ${fstar-exe} \
               --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src --include cache \
               --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
               --cache_checked_modules --cache_dir cache \
               --codegen Custard --custard_backend OCaml --custard_monomorphize_types true \
-              --custard_entry Data.BaseN.Pulse.encode_base16 \
-              --custard_entry Data.BaseN.Pulse.decode_base16 \
-              --custard_entry Data.BaseN.Pulse.encode_base64_triple \
-              --custard_entry Data.BaseN.Pulse.encode_base64_tail1 \
-              --custard_entry Data.BaseN.Pulse.encode_base64_tail2 \
-              --custard_entry Data.BaseN.Pulse.decode_base64_quad \
+              --custard_entry Data.Image.Pulse.encode_img_fmt \
+              --custard_entry Data.Image.Pulse.decode_img_fmt \
+              --custard_entry Data.Image.PNG.Pulse.encode_png_chunk \
+              --custard_entry Data.Image.PNG.Pulse.decode_png_chunk \
+              --custard_entry Data.Image.QRCode.Pulse.encode_qr_mode \
+              --custard_entry Data.Image.QRCode.Pulse.decode_qr_mode \
               --odir $out \
-              src/Data.BaseN.Pulse.fst || exit 1
-            # One dune library: pure spec + Pulse leaf together.
+              src/Data.Image.Pulse.fst || exit 1
+            # One dune library: pure spec + Pulse leaves together.
             cat > $out/dune-project <<DUNE_PROJECT
       (lang dune 3.11)
       (name ${pname}-ocaml)
@@ -219,9 +248,9 @@ let
 
   # ── native (C) backend ─────────────────────────────────────────────
   #
-  # `--codegen Custard --custard_backend C` extracts the Pulse leaf to C11
-  # The whole module is a library (no `main`), rooted
-  # at the six leaf encode/decode functions.
+  # `--codegen Custard --custard_backend C` extracts the three Pulse leaves to
+  # C11.  The whole module set is a library (no `main`), rooted at the six
+  # leaf encode/decode functions.
 
   native = mkDerivation {
     pname = "${pname}-native";
@@ -243,7 +272,7 @@ let
       cp ${codec-checked}/*.checked cache/ 2>/dev/null || true
       # Verify in dependency order into a cache so cross-module inlining can
       # find our own modules' `.checked` files.
-      for m in Data.BaseN.Base08 Data.BaseN.Base16 Data.BaseN.Base32 Data.BaseN.Base64 Data.BaseN Data.BaseN.Pulse; do
+      for m in ${builtins.concatStringsSep " " all-modules}; do
         ${fstar-exe} \
           --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src \
           --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
@@ -251,20 +280,24 @@ let
           --cache_checked_modules --cache_dir cache --odir cache \
           src/$m.fst || exit 1
       done
-      # Extract the whole `Data.BaseN.Pulse` module to C (library mode).
+      # Extract the three Pulse leaves to C (library mode).
+      # Extract the three Pulse leaves to C (library mode).  A single root
+      # file (Data.Image.Pulse) is the custard entry point; the other two
+      # leaves resolve from the pre-verified cache via the `--custard_entry`
+      # flags (Custard follows the entry's module closure).
       ${fstar-exe} \
         --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src --include cache \
         --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
         --cache_checked_modules --cache_dir cache \
         --codegen Custard --custard_backend C --custard_monomorphize_types true \
-        --custard_entry Data.BaseN.Pulse.encode_base16 \
-        --custard_entry Data.BaseN.Pulse.decode_base16 \
-        --custard_entry Data.BaseN.Pulse.encode_base64_triple \
-        --custard_entry Data.BaseN.Pulse.encode_base64_tail1 \
-        --custard_entry Data.BaseN.Pulse.encode_base64_tail2 \
-        --custard_entry Data.BaseN.Pulse.decode_base64_quad \
+        --custard_entry Data.Image.Pulse.encode_img_fmt \
+        --custard_entry Data.Image.Pulse.decode_img_fmt \
+        --custard_entry Data.Image.PNG.Pulse.encode_png_chunk \
+        --custard_entry Data.Image.PNG.Pulse.decode_png_chunk \
+        --custard_entry Data.Image.QRCode.Pulse.encode_qr_mode \
+        --custard_entry Data.Image.QRCode.Pulse.decode_qr_mode \
         --odir $out \
-        src/Data.BaseN.Pulse.fst || exit 1
+        src/Data.Image.Pulse.fst || exit 1
       # Compile the emitted C11 to a shared object + static lib.
       cc -c -Wall -Wextra -Werror -std=c11 -O2 -fPIC -I $out $out/Custard.c -o $out/Custard.o
       if [ "$(uname -s)" = Darwin ]; then
@@ -308,7 +341,7 @@ let
       done
       cp ${fstar-checked}/*.checked cache/ 2>/dev/null || true
       cp ${codec-checked}/*.checked cache/ 2>/dev/null || true
-      for m in Data.BaseN.Base08 Data.BaseN.Base16 Data.BaseN.Base32 Data.BaseN.Base64 Data.BaseN Data.BaseN.Pulse; do
+      for m in ${builtins.concatStringsSep " " all-modules}; do
         ${fstar-exe} \
           --no_default_includes --include "$ULIB" $PULSE_INCS --include ${codec-src}/src --include ./src \
           --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
@@ -321,14 +354,14 @@ let
         --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
         --cache_checked_modules --cache_dir cache \
         --codegen Custard --custard_backend FSharp --custard_monomorphize_types true \
-        --custard_entry Data.BaseN.Pulse.encode_base16 \
-        --custard_entry Data.BaseN.Pulse.decode_base16 \
-        --custard_entry Data.BaseN.Pulse.encode_base64_triple \
-        --custard_entry Data.BaseN.Pulse.encode_base64_tail1 \
-        --custard_entry Data.BaseN.Pulse.encode_base64_tail2 \
-        --custard_entry Data.BaseN.Pulse.decode_base64_quad \
+        --custard_entry Data.Image.Pulse.encode_img_fmt \
+        --custard_entry Data.Image.Pulse.decode_img_fmt \
+        --custard_entry Data.Image.PNG.Pulse.encode_png_chunk \
+        --custard_entry Data.Image.PNG.Pulse.decode_png_chunk \
+        --custard_entry Data.Image.QRCode.Pulse.encode_qr_mode \
+        --custard_entry Data.Image.QRCode.Pulse.decode_qr_mode \
         --odir src-out \
-        src/Data.BaseN.Pulse.fst || exit 1
+        src/Data.Image.Pulse.fst || exit 1
       dotnet build src-out/Custard.fsproj -c Release -o $out || exit 1
     '';
     installPhase = "true";

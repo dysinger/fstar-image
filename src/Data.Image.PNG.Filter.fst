@@ -1,6 +1,7 @@
 (*
    Data.Image.PNG.Filter — PNG filter algorithms
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Implements PNG filter types per ISO/IEC 15948:2004 section 9.
    All five filter types (None/Sub/Up/Average/Paeth) fully verified 0-admit:

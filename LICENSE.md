@@ -1,7 +1,7 @@
 <div align="center">
   <h1>License</h1>
-  <p><strong>basen</strong> — a formally verified, base-N encoding
-  library (RFC 4648) written in F\*.</p>
+  <p><strong>image</strong> — a formally verified PNG + QR-code
+  image codec library written in F\*.</p>
 </div>
 
 ---

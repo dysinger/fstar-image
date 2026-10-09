@@ -47,11 +47,10 @@ FSTAR_FLAGS = --no_default_includes \
 #
 SRC_MODS := \
   Data.Image.QRCode.Types Data.Image.QRCode.LUT Data.Image.QRCode.GF256 \
-  Data.Image.QRCode.ReedSolomon Data.Image.QRCode.DataEncoding \
+  Data.Image.QRCode.ReedSolomon Data.Image Data.Image.QRCode.DataEncoding \
   Data.Image.QRCode.Matrix Data.Image.QRCode.Encode Data.Image.QRCode.Render \
-  Data.Image Data.Image.Convert \
-  Data.Image.PNG.CRC Data.Image.PNG.Deflate Data.Image.PNG.Zlib \
-  Data.Image.PNG.Filter Data.Image.PNG.Encode \
+  Data.Image.Convert Data.Image.PNG.CRC Data.Image.PNG.Deflate \
+  Data.Image.PNG.Zlib Data.Image.PNG.Filter Data.Image.PNG.Encode \
   Data.Image.Pulse Data.Image.PNG.Pulse Data.Image.QRCode.Pulse
 
 # Pulse-only modules skip re-verification (they ship pre-verified in the F*

@@ -1,6 +1,7 @@
 (*
    Data.Image.QRCode.ReedSolomon — Reed-Solomon error correction for QR codes
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Implements systematic RS encoding over GF(256).
    Generator polynomials computed as product (x - alpha^i) for i=0..n-1.

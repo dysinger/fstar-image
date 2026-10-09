@@ -1,6 +1,7 @@
 (*
    Data.Image.PNG.CRC — CRC-32 (ISO/IEC 15948:2004)
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    CRC-32 over the reflected polynomial 0xEDB88320, computed TABLE-FREE
    (bitwise shift-and-XOR) so the known-answer lemmas are SMT-provable rather

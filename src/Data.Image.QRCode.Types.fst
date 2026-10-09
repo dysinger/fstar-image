@@ -1,6 +1,7 @@
 (*
    Data.Image.QRCode.Types — QR Code Core Types
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Core types: version, ecl, encoding_mode, qr_matrix.
 *)

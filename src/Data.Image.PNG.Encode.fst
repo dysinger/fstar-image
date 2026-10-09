@@ -1,6 +1,7 @@
 (*
    Data.Image.PNG.Encode — Top-level PNG encoder
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Encodes dualis image values to complete PNG byte streams.
    v0.1: FilterNone only, BTYPE=00 (stored), 8-bit color types only.

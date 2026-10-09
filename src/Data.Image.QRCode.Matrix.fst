@@ -1,6 +1,7 @@
 (*
    Data.Image.QRCode.Matrix — QR Module Placement & Masking
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Builds QR matrix: finder/timing/alignment patterns, data placement, masking.
 *)

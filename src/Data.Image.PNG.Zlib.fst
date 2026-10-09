@@ -1,6 +1,7 @@
 (*
    Data.Image.PNG.Zlib — Zlib Wrapper (RFC 1950)
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    v0.1: CMF=0x78, FLG=0x9C. Only stored blocks (BTYPE=00).
 *)

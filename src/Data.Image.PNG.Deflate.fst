@@ -1,6 +1,7 @@
 (*
    Data.Image.PNG.Deflate — BTYPE=00 stored blocks
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Implements deflate stored blocks (uncompressed) per RFC 1951.
    Format: [BFINAL+BTYPE byte] [LEN LSB] [LEN MSB] [NLEN LSB] [NLEN MSB] [data...]

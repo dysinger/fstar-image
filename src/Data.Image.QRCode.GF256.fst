@@ -1,6 +1,7 @@
 (*
    Data.Image.QRCode.GF256 — GF(256) arithmetic for QR Reed-Solomon
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Primitive polynomial: x^8 + x^4 + x^3 + x^2 + 1 (0x11D).
 

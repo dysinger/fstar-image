@@ -1,6 +1,7 @@
 (*
    Data.Image.QRCode.DataEncoding — QR Data Encoding
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    Encodes input data into QR codeword byte sequences (ISO/IEC 18004 §7).
    Byte mode only, all versions 1-40, all EC levels L/M/Q/H.

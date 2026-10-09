@@ -1,6 +1,7 @@
 (*
    Data.Image.QRCode.Encode — Top-Level QR Encoding Pipeline
-   Copyright 2026 Department of Code LLC. All rights reserved.
+   Copyright 2026 Department of Code LLC.
+   SPDX-License-Identifier: AGPL-3.0-or-later
 
    URI → encode_bytes → Reed-Solomon ECC → matrix placement → mask → qr_matrix
    v0.1: ECL=M, mask=0.

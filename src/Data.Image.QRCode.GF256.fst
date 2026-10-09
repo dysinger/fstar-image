@@ -1638,6 +1638,109 @@ let lemma_reduce_sub_id (c: nat) : Lemma
   ()
 #pop-options
 
+/// The double-substitution helper: subst_hi (2a) m = n_sub for 128 <= a < 256
+/// and 1 <= m <= 8 — doubling a < 2^8 moves its single high bit (bit 7) to
+/// bit 8, so 2a has bit 8 set and bits 9..15 clear; the XOR-fold therefore
+/// collapses to the sole [bit 8 = 1] term [1 · (2^0 · 0x1D) = 0x1D].
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let rec lemma_subst_hi_double (a m: nat) : Lemma
+  (requires 128 <= a /\ a < 256 /\ 1 <= m /\ m <= 8)
+  (ensures subst_hi (2 * a) m = n_sub)
+  (decreases m)
+  =
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (pow2_pos 9 = 512);
+  assert_norm (n_sub = 29);
+  assert_norm (pow2 16 = 65536);
+  let c = 2 * a in
+  if m = 1 then begin
+    (* subst_hi c 1 = xor16 (subst_hi c 0) (bit c 8 · (pow2_pos 0 · n_sub));
+       subst_hi c 0 = 0 and bit c 8 = 1 (256 <= c < 512), so it is xor16 0 29. *)
+    assert (subst_hi c 1 = xor16 (subst_hi c 0) (bit c 8 * (pow2_pos 0 * n_sub)));
+    assert (subst_hi c 0 = 0);
+    assert (256 <= c /\ c < 512);
+    assert (c / 256 = 1);
+    assert (bit c 8 = 1);
+    assert (pow2_pos 0 = 1);
+    assert (subst_hi c 1 = xor16 0 29);
+    lemma_xor_zero 29 16;
+    lemma_xor_comm 0 29 16;
+    ()
+  end
+  else begin
+    lemma_subst_hi_double a (m - 1);
+    let j = m - 1 in
+    assert (subst_hi c (m - 1) = n_sub);
+    (* The added term is at bit 8+j with j >= 1; c < 512 = 2^9 <= 2^{8+j}, so
+       bit c (8+j) = 0. *)
+    assert (9 <= 8 + j);
+    lemma_pow2_pos_mono 9 (8 + j);
+    assert (pow2_pos 9 <= pow2_pos (8 + j));
+    assert (c < pow2_pos 9);
+    assert (c < pow2_pos (8 + j));
+    lemma_bit_zero c (8 + j);
+    assert (bit c (8 + j) = 0);
+    assert (subst_hi c m = xor16 (subst_hi c (m - 1)) (bit c (8 + j) * (pow2_pos j * n_sub)));
+    assert (subst_hi c m = xor16 n_sub 0);
+    lemma_xor_zero n_sub 16;
+    ()
+  end
+#pop-options
+
+/// THE bridge stepping-stone: reduce_sub (2a) = red a for a < 256.  For a < 128
+/// both sides are the plain double 2a (a byte, already reduced); for a >= 128 the
+/// low-8 substitution keeps 2a % 256 (the high bit moves to bit 8 but is cleared
+/// by the [subst] low-half), and the reduce-sub second round is the byte 0x1D
+/// fold — agreeing with red's 0x11D fold via two-sided truncation of bit 8.
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let lemma_reduce_sub_double (a: nat) : Lemma
+  (requires a < 256)
+  (ensures reduce_sub (2 * a) = red a)
+  =
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (pow2 8 = 256);
+  if a < 128 then begin
+    (* 2a < 256, so subst (2a) = 2a and reduce_sub is the identity. *)
+    assert (2 * a < 256);
+    lemma_subst_id (2 * a);
+    lemma_reduce_sub_id (2 * a);
+    assert (reduce_sub (2 * a) = 2 * a);
+    assert (red a = 2 * a);
+    ()
+  end
+  else begin
+    assert (128 <= a /\ a < 256);
+    lemma_subst_hi_double a 8;
+    assert (subst_hi (2 * a) 8 = n_sub);
+    (* bits_xor (2a) 8 = (2a) % 256 = 2a - 256, the low byte. *)
+    lemma_bits_xor_eq_sum (2 * a) 8;
+    lemma_bits_sum_mod (2 * a) 8;
+    assert (bits_xor (2 * a) 8 = (2 * a) % 256);
+    assert ((2 * a) % 256 = 2 * a - 256);
+    let lo = 2 * a - 256 in
+    assert (lo < 256);
+    (* subst (2a) = xor16 lo n_sub = xor8 lo 29 (both < 256). *)
+    assert (subst (2 * a) = xor16 (bits_xor (2 * a) 8) (subst_hi (2 * a) 8));
+    assert (subst (2 * a) = xor16 lo 29);
+    assert (lo < 256 /\ 29 < 256);
+    lemma_xor_16_eq_8 lo 29;
+    assert (xor16 lo 29 = xor8 lo 29);
+    lemma_xor8_bounded lo 29;
+    assert (xor16 lo 29 < 256);
+    (* reduce_sub (2a) = subst (subst (2a)) = subst (xor16 lo 29) = xor16 lo 29
+       (the byte is already reduced). *)
+    lemma_subst_id (xor16 lo 29);
+    assert (reduce_sub (2 * a) = xor16 lo 29);
+    (* red a = xor8 (2a) 0x11D = xor8 lo 29 via two-sided truncation. *)
+    assert (red a = xor8 (2 * a) 0x11D);
+    assert (2 * a = 256 + lo);
+    assert (0x11D = 256 + 29);
+    lemma_xor_trunc_both 8 lo 29;
+    assert (xor8 (2 * a) 0x11D = xor8 lo 29);
+    ()
+  end
+#pop-options
+
 /// THE additivity of the reduction: reduce_sub (xor16 x y) = xor16 (reduce_sub x) (reduce_sub y).
 #push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
 let lemma_reduce_sub_xor (x y: nat) : Lemma

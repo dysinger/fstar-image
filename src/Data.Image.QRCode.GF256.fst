@@ -1869,6 +1869,51 @@ let rec lemma_subst_hi_double (a m: nat) : Lemma
   end
 #pop-options
 
+/// A single substitution round of a doubled byte equals field-doubling:
+/// subst (2a) = red a for a < 256.  This is the single-round cousin of
+/// [lemma_reduce_sub_double] (subst (2a) is already reduced, so it is also
+/// [reduce_sub (2a)]).  For a < 128 both are the plain double; for a >= 128
+/// bit 8 of 2a folds to n_sub, matching red's 0x11D fold via two-sided
+/// truncation of bit 8.
+#push-options "--fuel 3 --ifuel 3 --z3rlimit 400"
+let lemma_subst_double_byte (a: nat) : Lemma
+  (requires a < 256)
+  (ensures subst (2 * a) = red a)
+  =
+  assert_norm (pow2_pos 8 = 256);
+  assert_norm (pow2 8 = 256);
+  assert_norm (pow2 16 = 65536);
+  assert_norm (n_sub = 29);
+  if a < 128 then begin
+    assert (2 * a < 256);
+    lemma_subst_id (2 * a);
+    assert (subst (2 * a) = 2 * a);
+    assert (red a = 2 * a);
+    ()
+  end
+  else begin
+    assert (128 <= a /\ a < 256);
+    lemma_subst_hi_double a 8;
+    assert (subst_hi (2 * a) 8 = n_sub);
+    lemma_bits_xor_eq_sum (2 * a) 8;
+    lemma_bits_sum_mod (2 * a) 8;
+    assert (bits_xor (2 * a) 8 = (2 * a) % 256);
+    assert ((2 * a) % 256 = 2 * a - 256);
+    let lo = 2 * a - 256 in
+    assert (lo < 256);
+    assert (subst (2 * a) = xor16 (bits_xor (2 * a) 8) (subst_hi (2 * a) 8));
+    assert (subst (2 * a) = xor16 lo 29);
+    assert (red a = xor8 (2 * a) 0x11D);
+    assert (2 * a = 256 + lo);
+    assert (0x11D = 256 + 29);
+    lemma_xor_trunc_both 8 lo 29;
+    assert (xor8 (2 * a) 0x11D = xor8 lo 29);
+    lemma_xor_16_eq_8 lo 29;
+    assert (xor16 lo 29 = xor8 lo 29);
+    ()
+  end
+#pop-options
+
 /// THE bridge stepping-stone: reduce_sub (2a) = red a for a < 256.  For a < 128
 /// both sides are the plain double 2a (a byte, already reduced); for a >= 128 the
 /// low-8 substitution keeps 2a % 256 (the high bit moves to bit 8 but is cleared
@@ -1938,6 +1983,70 @@ let lemma_reduce_sub_xor (x y: nat) : Lemma
   assert (subst x < pow2 16);
   assert (subst y < pow2 16);
   lemma_subst_xor (subst x) (subst y)
+#pop-options
+
+(* ========================================================================
+   SECTION 2h'': monomial doubling — mono (j+1) = red (mono j)
+   ========================================================================
+   [mono j = reduce_sub (2^j)] is the reduction of the j-th monomial.  The
+   doubling-commutation [reduce_sub (2x) = red (reduce_sub x)] collapses for
+   a monomial x = 2^j to [mono (j+1) = red (mono j)].  The j < 8 band is the
+   byte-scalar case ([lemma_reduce_sub_double] + [lemma_reduce_sub_id]); the
+   hard 8 <= j <= 14 band is a finite-field band: seven concrete substitutions
+   [subst (2^{j-7}·n_sub) = red (subst (2^{j-8}·n_sub))], each discharged by
+   [assert_norm] (a finite field, so sound — not a brute-force of 2^16 pairs).
+   ======================================================================== *)
+
+/// The reduction of the j-th monomial 2^j.
+let mono (j: nat) : nat = reduce_sub (pow2_pos j)
+
+/// mono (j+1) = red (mono j) for j < 8: the monomial is a byte, so reduce_sub
+/// is the identity and the double is the scalar [lemma_reduce_sub_double].
+#push-options "--z3rlimit 200"
+let lemma_monomial_double_lt8 (j: nat) : Lemma
+  (requires j < 8)
+  (ensures mono (j + 1) = red (mono j))
+  =
+  assert_norm (pow2 8 = 256);
+  lemma_pow2_pos_mono j 7;
+  assert (pow2_pos j < 256);
+  lemma_reduce_sub_id (pow2_pos j);
+  assert (mono j = pow2_pos j);
+  lemma_reduce_sub_double (pow2_pos j);
+  assert (reduce_sub (2 * pow2_pos j) = red (pow2_pos j));
+  lemma_pow2_pos_succ j;
+  assert (pow2_pos (j + 1) = 2 * pow2_pos j);
+  assert (mono (j + 1) = reduce_sub (2 * pow2_pos j));
+  ()
+#pop-options
+
+/// mono (j+1) = red (mono j) for the finite band 8 <= j <= 14.  Each concrete
+/// j is a single [assert_norm] on the closed substitution form (sound: GF(256)
+/// is finite, and the band is 7 explicit elements, not a 2^16-pair fold).
+#push-options "--z3rlimit 300"
+let lemma_monomial_double_band (j: nat) : Lemma
+  (requires j = 8 \/ j = 9 \/ j = 10 \/ j = 11 \/ j = 12 \/ j = 13 \/ j = 14)
+  (ensures mono (j + 1) = red (mono j))
+  =
+  match j with
+  | 8 -> assert_norm (mono 9 = red (mono 8))
+  | 9 -> assert_norm (mono 10 = red (mono 9))
+  | 10 -> assert_norm (mono 11 = red (mono 10))
+  | 11 -> assert_norm (mono 12 = red (mono 11))
+  | 12 -> assert_norm (mono 13 = red (mono 12))
+  | 13 -> assert_norm (mono 14 = red (mono 13))
+  | _ -> assert_norm (mono 15 = red (mono 14))
+#pop-options
+
+/// THE monomial-doubling atom: mono (j+1) = red (mono j) for j <= 14 — the
+/// base case of the doubling-commutation [reduce_sub (2x) = red (reduce_sub x)].
+#push-options "--z3rlimit 300"
+let lemma_monomial_double (j: nat) : Lemma
+  (requires j <= 14)
+  (ensures mono (j + 1) = red (mono j))
+  =
+  if j < 8 then lemma_monomial_double_lt8 j
+  else lemma_monomial_double_band j
 #pop-options
 
 (* ========================================================================

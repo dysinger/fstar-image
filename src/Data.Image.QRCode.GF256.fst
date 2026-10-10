@@ -2049,6 +2049,72 @@ let lemma_monomial_double (j: nat) : Lemma
   else lemma_monomial_double_band j
 #pop-options
 
+(* scalar-out atoms: a bit (0/1) factors out of subst/reduce_sub/red.  These
+   are the BOOLEAN-select facts the doubling-commutation needs to commute the
+   reduction through the bit-decomposition XOR-fold (each term is bit_i x · monomial). *)
+
+/// subst (b·c) = b · subst c for a bit b.
+#push-options "--z3rlimit 60"
+let lemma_subst_scale (b c: nat) : Lemma
+  (requires (b = 0 \/ b = 1) /\ c < pow2 16)
+  (ensures subst (b * c) = b * subst c)
+  =
+  if b = 0 then begin
+    assert (b * c = 0);
+    lemma_subst_id 0;
+    assert (subst (b * c) = 0);
+    assert (b * subst c = 0);
+    ()
+  end
+  else begin
+    assert (b = 1);
+    assert (b * c = c);
+    assert (b * subst c = subst c);
+    ()
+  end
+#pop-options
+
+/// reduce_sub (b·c) = b · reduce_sub c for a bit b.
+#push-options "--z3rlimit 60"
+let lemma_reduce_sub_scale (b c: nat) : Lemma
+  (requires (b = 0 \/ b = 1) /\ c < pow2 16)
+  (ensures reduce_sub (b * c) = b * reduce_sub c)
+  =
+  if b = 0 then begin
+    lemma_reduce_sub_id 0;
+    assert (reduce_sub 0 = 0);
+    assert (b * c = 0);
+    assert (b * reduce_sub c = 0);
+    ()
+  end
+  else begin
+    assert (b = 1);
+    assert (b * c = c);
+    assert (b * reduce_sub c = reduce_sub c);
+    ()
+  end
+#pop-options
+
+/// red (b·m) = b · red m for a bit b and a byte m.
+#push-options "--z3rlimit 60"
+let lemma_red_scale (b m: nat) : Lemma
+  (requires (b = 0 \/ b = 1) /\ m < 256)
+  (ensures red (b * m) = b * red m)
+  =
+  if b = 0 then begin
+    assert (b * m = 0);
+    assert (red 0 = 0);
+    assert (b * red m = 0);
+    ()
+  end
+  else begin
+    assert (b = 1);
+    assert (b * m = m);
+    assert (b * red m = red m);
+    ()
+  end
+#pop-options
+
 (* ========================================================================
    SECTION 2h: field-doubling (red) is GF(2)-linear
    ======================================================================== *)

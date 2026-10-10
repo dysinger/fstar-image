@@ -755,6 +755,30 @@ let _lemma_reduce_sub_xor = lemma_reduce_sub_xor
 let _lemma_xor16_double_of_xor8 = lemma_xor16_double_of_xor8
 (** [lemma_red_xor] *)
 let _lemma_red_xor = lemma_red_xor
+(** [lemma_bit_pow2_self] *)
+let _lemma_bit_pow2_self = lemma_bit_pow2_self
+(** [lemma_bit_pow2_lt] *)
+let _lemma_bit_pow2_lt = lemma_bit_pow2_lt
+(** [lemma_bit_pow2_gt] *)
+let _lemma_bit_pow2_gt = lemma_bit_pow2_gt
+(** [lemma_bit_pow2] *)
+let _lemma_bit_pow2 = lemma_bit_pow2
+(** [lemma_xor_zero16_r] *)
+let _lemma_xor_zero16_r = lemma_xor_zero16_r
+(** [lemma_powj_nsub_bound] *)
+let _lemma_powj_nsub_bound = lemma_powj_nsub_bound
+(** [lemma_subst_hi_powj_lo] *)
+let _lemma_subst_hi_powj_lo = lemma_subst_hi_powj_lo
+(** [lemma_subst_hi_powj_hi] *)
+let _lemma_subst_hi_powj_hi = lemma_subst_hi_powj_hi
+(** [lemma_subst_hi_powj] *)
+let _lemma_subst_hi_powj = lemma_subst_hi_powj
+(** [lemma_bits_xor_powj_zero_go] *)
+let _lemma_bits_xor_powj_zero_go = lemma_bits_xor_powj_zero_go
+(** [lemma_bits_xor_powj_zero] *)
+let _lemma_bits_xor_powj_zero = lemma_bits_xor_powj_zero
+(** [lemma_subst_powj] *)
+let _lemma_subst_powj = lemma_subst_powj
 
 
 (* ========================================================================

@@ -1459,6 +1459,187 @@ let lemma_bit_zero (c k: nat) : Lemma
   ()
 #pop-options
 
+(* ========================================================================
+   SECTION 2h': monomial atoms (the doubling-commutation stepping stones)
+   ========================================================================
+   The doubling-commutation [reduce_sub (2x) = red (reduce_sub x)] collapses
+   for a monomial x = 2^j to [mono (j+1) = red (mono j)] with
+   [mono j = reduce_sub (2^j)].  The hard band 8 <= j <= 14 needs the
+   substitution of a single monomial [subst (2^j) = 2^{j-8} · n_sub], which
+   decomposes into three facts: (i) [bit (2^j) i] is 1 exactly at i = j
+   (else 0); (ii) [bits_xor (2^j) 8 = 0] (no low bits); (iii)
+   [subst_hi (2^j) 8 = 2^{j-8} · n_sub] (the lone bit 8+j folds to one term).
+   All proven 0-admit below.
+   ======================================================================== *)
+
+/// bit (2^j) j = 1 (2^j / 2^j = 1).
+let lemma_bit_pow2_self (j: nat) : Lemma
+  (ensures bit (pow2_pos j) j = 1)
+  = ()
+
+/// bit (2^j) i = 0 for i < j (2^j / 2^i = 2^{j-i} is even).
+#push-options "--z3rlimit 200"
+let lemma_bit_pow2_lt (j i: nat) : Lemma
+  (requires i < j)
+  (ensures bit (pow2_pos j) i = 0)
+  =
+  lemma_pow2_pos_add i (j - i);
+  FStar.Math.Lemmas.cancel_mul_div (pow2_pos (j - i)) (pow2_pos i);
+  assert (pow2_pos j / pow2_pos i = pow2_pos (j - i));
+  assert (j - i >= 1);
+  FStar.Math.Lemmas.lemma_mod_mul_distr_l 2 (pow2_pos (j - i - 1)) 2;
+  ()
+#pop-options
+
+/// bit (2^j) i = 0 for i > j (2^j / 2^i = 0).
+#push-options "--z3rlimit 200"
+let lemma_bit_pow2_gt (j i: nat) : Lemma
+  (requires i > j)
+  (ensures bit (pow2_pos j) i = 0)
+  =
+  lemma_pow2_pos_mono (j + 1) i;
+  assert (pow2_pos (j + 1) <= pow2_pos i);
+  assert (pow2_pos j < pow2_pos (j + 1));
+  assert (pow2_pos j < pow2_pos i);
+  FStar.Math.Lemmas.small_div (pow2_pos j) (pow2_pos i);
+  ()
+#pop-options
+
+/// bit (2^j) i is (i = j ? 1 : 0) — the monomial bit-selector.
+let lemma_bit_pow2 (j i: nat) : Lemma
+  (ensures bit (pow2_pos j) i = (if i = j then 1 else 0))
+  =
+  if i = j then lemma_bit_pow2_self j
+  else if i < j then lemma_bit_pow2_lt j i
+  else lemma_bit_pow2_gt j i
+
+/// xor16 x 0 = x for x < 2^16 (the right-side zero identity, the mirror of
+/// [lemma_xor_zero16]).
+let lemma_xor_zero16_r (x: nat) : Lemma
+  (requires x < pow2 16)
+  (ensures xor16 x 0 = x)
+  =
+  lemma_xor_zero x 16
+
+/// 2^{j-8} · n_sub < 2^16 for 8 <= j <= 14 (max 2^6 · 29 = 1856).
+#push-options "--z3rlimit 200"
+let lemma_powj_nsub_bound (j: nat) : Lemma
+  (requires j >= 8 /\ j <= 14)
+  (ensures pow2_pos (j - 8) * n_sub < pow2 16)
+  =
+  assert_norm (pow2 16 = 65536);
+  lemma_pow2_pos_mono (j - 8) 6;
+  assert_norm (pow2_pos 6 = 64);
+  assert_norm (n_sub = 29);
+  assert (pow2_pos (j - 8) <= 64);
+  assert (pow2_pos (j - 8) * 29 <= 64 * 29);
+  assert_norm (64 * 29 = 1856);
+  ()
+#pop-options
+
+/// subst_hi (2^j) m = 0 when m <= j - 8 (the fold has not yet reached the lone
+/// set bit at position j - 8).
+#push-options "--z3rlimit 200"
+let rec lemma_subst_hi_powj_lo (j m: nat) : Lemma
+  (requires j >= 8 /\ m <= j - 8)
+  (ensures subst_hi (pow2_pos j) m = 0)
+  (decreases m)
+  =
+  if m = 0 then ()
+  else begin
+    lemma_subst_hi_powj_lo j (m - 1);
+    assert (m - 1 < m);
+    assert (m - 1 < j - 8);
+    assert (8 + (m - 1) < j);
+    lemma_bit_pow2 j (8 + (m - 1));
+    assert (bit (pow2_pos j) (8 + (m - 1)) = 0);
+    assert (subst_hi (pow2_pos j) m = xor16 0 0);
+    lemma_xor_00 16;
+    ()
+  end
+#pop-options
+
+/// subst_hi (2^j) m = 2^{j-8} · n_sub when j - 8 < m <= 8 (past the lone set
+/// bit, all remaining terms are zero).
+#push-options "--z3rlimit 400"
+let rec lemma_subst_hi_powj_hi (j m: nat) : Lemma
+  (requires j >= 8 /\ j <= 14 /\ j - 8 < m /\ m <= 8)
+  (ensures subst_hi (pow2_pos j) m = pow2_pos (j - 8) * n_sub)
+  (decreases m)
+  =
+  assert_norm (pow2 16 = 65536);
+  lemma_powj_nsub_bound j;
+  if m = j - 8 + 1 then begin
+    lemma_subst_hi_powj_lo j (m - 1);
+    assert (m - 1 = j - 8);
+    assert (subst_hi (pow2_pos j) (m - 1) = 0);
+    assert (8 + (m - 1) = j);
+    lemma_bit_pow2_self j;
+    assert (bit (pow2_pos j) (8 + (m - 1)) = 1);
+    assert (pow2_pos (m - 1) = pow2_pos (j - 8));
+    assert (subst_hi (pow2_pos j) m = xor16 0 (1 * (pow2_pos (j - 8) * n_sub)));
+    lemma_xor_zero16 (pow2_pos (j - 8) * n_sub);
+    ()
+  end
+  else begin
+    lemma_subst_hi_powj_hi j (m - 1);
+    assert (subst_hi (pow2_pos j) (m - 1) = pow2_pos (j - 8) * n_sub);
+    assert (8 + (m - 1) > j);
+    lemma_bit_pow2 j (8 + (m - 1));
+    assert (bit (pow2_pos j) (8 + (m - 1)) = 0);
+    assert (subst_hi (pow2_pos j) m = xor16 (pow2_pos (j - 8) * n_sub) 0);
+    lemma_xor_zero16_r (pow2_pos (j - 8) * n_sub);
+    ()
+  end
+#pop-options
+
+/// subst_hi (2^j) 8 = 2^{j-8} · n_sub for 8 <= j <= 14.
+let lemma_subst_hi_powj (j: nat) : Lemma
+  (requires j >= 8 /\ j <= 14)
+  (ensures subst_hi (pow2_pos j) 8 = pow2_pos (j - 8) * n_sub)
+  =
+  lemma_subst_hi_powj_hi j 8
+
+/// bits_xor (2^j) n = 0 for j >= n (the monomial has no bits below n).
+#push-options "--z3rlimit 200"
+let rec lemma_bits_xor_powj_zero_go (j n: nat) : Lemma
+  (requires j >= n)
+  (ensures bits_xor (pow2_pos j) n = 0)
+  (decreases n)
+  =
+  if n = 0 then ()
+  else begin
+    lemma_bits_xor_powj_zero_go j (n - 1);
+    lemma_bit_pow2 j (n - 1);
+    lemma_xor_00 16;
+    ()
+  end
+#pop-options
+
+/// bits_xor (2^j) 8 = 0 for j >= 8.
+let lemma_bits_xor_powj_zero (j: nat) : Lemma
+  (requires j >= 8)
+  (ensures bits_xor (pow2_pos j) 8 = 0)
+  = lemma_bits_xor_powj_zero_go j 8
+
+/// subst (2^j) = 2^{j-8} · n_sub for 8 <= j <= 14 (the low bits vanish, the
+/// lone bit 8+j folds to a single monomial).
+#push-options "--z3rlimit 300"
+let lemma_subst_powj (j: nat) : Lemma
+  (requires j >= 8 /\ j <= 14)
+  (ensures subst (pow2_pos j) = pow2_pos (j - 8) * n_sub)
+  =
+  assert_norm (pow2 16 = 65536);
+  lemma_bits_xor_powj_zero j;
+  assert (bits_xor (pow2_pos j) 8 = 0);
+  lemma_subst_hi_powj j;
+  assert (subst_hi (pow2_pos j) 8 = pow2_pos (j - 8) * n_sub);
+  assert (subst (pow2_pos j) = xor16 0 (pow2_pos (j - 8) * n_sub));
+  lemma_powj_nsub_bound j;
+  lemma_xor_zero16 (pow2_pos (j - 8) * n_sub);
+  ()
+#pop-options
+
 /// subst_hi c m = 0 when c < 256 (all bits >= 8 are zero).
 #push-options "--fuel 2 --ifuel 2 --z3rlimit 200"
 let rec lemma_subst_hi_zero (c m: nat) : Lemma

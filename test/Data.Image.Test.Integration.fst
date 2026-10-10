@@ -751,6 +751,10 @@ let _lemma_subst_hi_double = lemma_subst_hi_double
 let _lemma_reduce_sub_double = lemma_reduce_sub_double
 (** [lemma_reduce_sub_xor] *)
 let _lemma_reduce_sub_xor = lemma_reduce_sub_xor
+(** [lemma_xor16_double_of_xor8] *)
+let _lemma_xor16_double_of_xor8 = lemma_xor16_double_of_xor8
+(** [lemma_red_xor] *)
+let _lemma_red_xor = lemma_red_xor
 
 
 (* ========================================================================

@@ -1760,6 +1760,49 @@ let lemma_reduce_sub_xor (x y: nat) : Lemma
 #pop-options
 
 (* ========================================================================
+   SECTION 2h: field-doubling (red) is GF(2)-linear
+   ======================================================================== *)
+
+/// Doubling widens cleanly from 8 to 16 bits: xor16 (2a) (2b) = 2 · xor8 a b
+/// for a, b < 256.  The 16-bit XOR of the doubled operands equals the double
+/// of their 8-bit XOR (the low bit is even, and the 8->16 widening is exact).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_xor16_double_of_xor8 (a b: nat) : Lemma
+  (requires a < 256 /\ b < 256)
+  (ensures xor16 (2 * a) (2 * b) = 2 * xor8 a b)
+  =
+  assert_norm (pow2 8 = 256);
+  lemma_nat_xor_double a b 16;
+  lemma_xor_pad a b 8 7;
+  ()
+#pop-options
+
+/// Field doubling (red = multiply by the polynomial x) is GF(2)-linear on
+/// bytes: red (xor8 a b) = xor8 (red a) (red b).  This is the additivity of
+/// the alpha = 0x02 generator, and it is what lets the field-doubling commute
+/// through the bit-decomposition XOR-fold of a value during the doubling
+/// commutation (reduce_sub (2x) vs red (reduce_sub x)).
+#push-options "--fuel 2 --ifuel 2 --z3rlimit 400"
+let lemma_red_xor (a b: nat) : Lemma
+  (requires a < 256 /\ b < 256)
+  (ensures red (xor8 a b) = xor8 (red a) (red b))
+  =
+  assert_norm (pow2 8 = 256);
+  assert_norm (pow2 16 = 65536);
+  lemma_xor8_bounded a b;
+  lemma_reduce_sub_double (xor8 a b);
+  lemma_xor16_double_of_xor8 a b;
+  assert (2 * a < pow2 16 /\ 2 * b < pow2 16);
+  lemma_reduce_sub_xor (2 * a) (2 * b);
+  lemma_reduce_sub_double a;
+  lemma_reduce_sub_double b;
+  lemma_red_bounded a;
+  lemma_red_bounded b;
+  lemma_xor_16_eq_8 (red a) (red b);
+  ()
+#pop-options
+
+(* ========================================================================
    SECTION 3: Field axiom lemmas — proven
    ======================================================================== *)
 

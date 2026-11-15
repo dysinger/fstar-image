@@ -84,6 +84,12 @@ let lemma_zlib_header_ok () : Lemma (validate_zlib_header 0x78uy 0x9Cuy == Some 
 
 /// [adler32_loop] keeps both running sums strictly below 65521 (the Adler-32
 /// modulus), hence the final value s2*65536 + s1 < 2^32.
+///
+/// The two `% 65521` reductions are the whole proof, and they are stated
+/// explicitly per step: Z3 5.3.0 will not re-derive `x % m < m` inside this
+/// recursive call's context and instead spins on the nonlinear obligation
+/// (measured: the file does not finish; it did on Z3 4.13.3).  Naming the
+/// bound at each step is solver-independent and costs nothing.
 let rec lemma_adler32_loop_bound (s1 s2: nat) (data: list byte) : Lemma
   (requires s1 < 65521 /\ s2 < 65521)
   (ensures adler32_loop s1 s2 data < 4294967296)
@@ -92,7 +98,12 @@ let rec lemma_adler32_loop_bound (s1 s2: nat) (data: list byte) : Lemma
     | [] -> ()
     | b :: rest ->
       let bval = FStar.UInt8.v b in
-      lemma_adler32_loop_bound ((s1 + bval) % 65521) ((s2 + ((s1 + bval) % 65521)) % 65521) rest
+      let s1' = (s1 + bval) % 65521 in
+      let s2' = (s2 + s1') % 65521 in
+      assert (s1' < 65521);
+      assert (s2' < 65521);
+      assert (bval < 256);
+      lemma_adler32_loop_bound s1' s2' rest
 
 /// Adler-32 is always < 2^32.
 let lemma_adler32_bound (data: list byte) : Lemma (adler32 data < 4294967296)

@@ -2075,7 +2075,7 @@ let lemma_subst_scale (b c: nat) : Lemma
 #pop-options
 
 /// reduce_sub (b·c) = b · reduce_sub c for a bit b.
-#push-options "--z3rlimit 60"
+#push-options "--z3rlimit 400"
 let lemma_reduce_sub_scale (b c: nat) : Lemma
   (requires (b = 0 \/ b = 1) /\ c < pow2 16)
   (ensures reduce_sub (b * c) = b * reduce_sub c)
